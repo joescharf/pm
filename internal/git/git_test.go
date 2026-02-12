@@ -1,6 +1,7 @@
 package git
 
 import (
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -56,4 +57,40 @@ func TestExtractOwnerRepo_HTTPSNoGit(t *testing.T) {
 func TestExtractOwnerRepo_Invalid(t *testing.T) {
 	_, _, err := ExtractOwnerRepo("not-a-url")
 	assert.Error(t, err)
+}
+
+func TestLatestTag_NoTags(t *testing.T) {
+	dir := t.TempDir()
+	exec.Command("git", "-C", dir, "init").Run()
+	exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run()
+
+	c := NewClient()
+	_, err := c.LatestTag(dir)
+	assert.Error(t, err)
+}
+
+func TestLatestTag_WithTag(t *testing.T) {
+	dir := t.TempDir()
+	exec.Command("git", "-C", dir, "init").Run()
+	exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run()
+	exec.Command("git", "-C", dir, "tag", "v1.0.0").Run()
+
+	c := NewClient()
+	tag, err := c.LatestTag(dir)
+	assert.NoError(t, err)
+	assert.Equal(t, "v1.0.0", tag)
+}
+
+func TestLatestTag_MultipleTagsReturnsLatest(t *testing.T) {
+	dir := t.TempDir()
+	exec.Command("git", "-C", dir, "init").Run()
+	exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "first").Run()
+	exec.Command("git", "-C", dir, "tag", "v1.0.0").Run()
+	exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "second").Run()
+	exec.Command("git", "-C", dir, "tag", "v2.0.0").Run()
+
+	c := NewClient()
+	tag, err := c.LatestTag(dir)
+	assert.NoError(t, err)
+	assert.Equal(t, "v2.0.0", tag)
 }

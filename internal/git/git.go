@@ -26,6 +26,7 @@ type Client interface {
 	IsDirty(path string) (bool, error)
 	WorktreeList(path string) ([]WorktreeInfo, error)
 	RemoteURL(path string) (string, error)
+	LatestTag(path string) (string, error)
 }
 
 // RealClient implements Client using real git commands.
@@ -111,6 +112,10 @@ func (c *RealClient) RemoteURL(path string) (string, error) {
 		return "", nil // no remote is not an error
 	}
 	return out, nil
+}
+
+func (c *RealClient) LatestTag(path string) (string, error) {
+	return gitCmd(path, "describe", "--tags", "--abbrev=0")
 }
 
 // ParseWorktreeListPorcelain parses the output of `git worktree list --porcelain`.
