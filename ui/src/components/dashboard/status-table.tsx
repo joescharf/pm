@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import { ExternalLink } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -12,6 +13,10 @@ import { HealthBadge } from "./health-badge";
 import { TimeAgo } from "@/components/shared/time-ago";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { StatusEntry } from "@/lib/types";
+
+function repoURL(url: string): string {
+  return url.replace(/\.git$/, "");
+}
 
 interface StatusTableProps {
   entries: StatusEntry[];
@@ -54,14 +59,43 @@ export function StatusTable({ entries }: StatusTableProps) {
             </TableCell>
             <TableCell className="font-mono text-xs">
               {e.latestVersion ? (
-                <span title={e.versionSource === "github" ? "GitHub release" : "git tag"}>
-                  {e.latestVersion}
-                </span>
+                e.project.RepoURL && e.versionSource === "github" ? (
+                  <a
+                    href={`${repoURL(e.project.RepoURL)}/releases/tag/${e.latestVersion}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 hover:underline"
+                    title="GitHub release"
+                  >
+                    {e.latestVersion}
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : (
+                  <span title="git tag">{e.latestVersion}</span>
+                )
               ) : (
                 "—"
               )}
             </TableCell>
-            <TableCell className="font-mono text-xs">{e.branch || "—"}</TableCell>
+            <TableCell className="font-mono text-xs">
+              {e.branch ? (
+                e.project.RepoURL ? (
+                  <a
+                    href={`${repoURL(e.project.RepoURL)}/tree/${e.branch}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 hover:underline"
+                  >
+                    {e.branch}
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : (
+                  e.branch
+                )
+              ) : (
+                "—"
+              )}
+            </TableCell>
             <TableCell>
               {e.isDirty ? (
                 <Badge variant="destructive" className="text-xs">dirty</Badge>
