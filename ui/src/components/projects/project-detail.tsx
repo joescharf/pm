@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams, useNavigate } from "react-router";
-import { Pencil, Trash2, ExternalLink } from "lucide-react";
+import { Pencil, Trash2, ExternalLink, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useProject, useDeleteProject } from "@/hooks/use-projects";
 import { useProjectIssues } from "@/hooks/use-issues";
@@ -28,11 +28,13 @@ import { TimeAgo } from "@/components/shared/time-ago";
 import { EmptyState } from "@/components/shared/empty-state";
 import { HealthChart } from "./health-chart";
 import { ProjectForm } from "./project-form";
+import { IssueForm } from "@/components/issues/issue-form";
 
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
+  const [createIssueOpen, setCreateIssueOpen] = useState(false);
 
   const { data: project, isLoading, error } = useProject(id!);
   const { data: healthData, isLoading: healthLoading } = useProjectHealth(id!);
@@ -170,38 +172,22 @@ export function ProjectDetail() {
         </CardContent>
       </Card>
 
-      {/* Health Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Health Score</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {healthLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-6 rounded" />
-              ))}
-            </div>
-          ) : healthData ? (
-            <HealthChart health={healthData} />
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No health data available.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Issues & Sessions Tabs */}
       <Tabs defaultValue="issues">
-        <TabsList>
-          <TabsTrigger value="issues">
-            Issues{issues.length > 0 && ` (${issues.length})`}
-          </TabsTrigger>
-          <TabsTrigger value="sessions">
-            Sessions{sessions.length > 0 && ` (${sessions.length})`}
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between">
+          <TabsList>
+            <TabsTrigger value="issues">
+              Issues{issues.length > 0 && ` (${issues.length})`}
+            </TabsTrigger>
+            <TabsTrigger value="sessions">
+              Sessions{sessions.length > 0 && ` (${sessions.length})`}
+            </TabsTrigger>
+          </TabsList>
+          <Button variant="outline" size="sm" onClick={() => setCreateIssueOpen(true)}>
+            <Plus />
+            New Issue
+          </Button>
+        </div>
 
         <TabsContent value="issues">
           {issues.length === 0 ? (
@@ -290,11 +276,40 @@ export function ProjectDetail() {
         </TabsContent>
       </Tabs>
 
+      {/* Health Score (lower prominence) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Health Score</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {healthLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-6 rounded" />
+              ))}
+            </div>
+          ) : healthData ? (
+            <HealthChart health={healthData} />
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No health data available.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Edit Dialog */}
       <ProjectForm
         open={editOpen}
         onOpenChange={setEditOpen}
         project={project}
+      />
+
+      {/* Create Issue Dialog */}
+      <IssueForm
+        open={createIssueOpen}
+        onOpenChange={setCreateIssueOpen}
+        defaultProjectId={id}
       />
     </div>
   );
