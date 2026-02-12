@@ -7,11 +7,19 @@ import (
 	"strings"
 )
 
+// ReleaseAsset represents a file attached to a GitHub release.
+type ReleaseAsset struct {
+	Name          string `json:"name"`
+	DownloadCount int    `json:"downloadCount"`
+	Size          int64  `json:"size"`
+}
+
 // Release represents a GitHub release.
 type Release struct {
-	TagName     string `json:"tagName"`
-	PublishedAt string `json:"publishedAt"`
-	IsLatest    bool   `json:"isLatest"`
+	TagName     string         `json:"tagName"`
+	PublishedAt string         `json:"publishedAt"`
+	IsLatest    bool           `json:"isLatest"`
+	Assets      []ReleaseAsset `json:"assets"`
 }
 
 // PullRequest represents a GitHub pull request.
@@ -62,7 +70,7 @@ func ghCmd(args ...string) (string, error) {
 func (c *RealGitHubClient) LatestRelease(owner, repo string) (*Release, error) {
 	out, err := ghCmd("api",
 		fmt.Sprintf("repos/%s/%s/releases/latest", owner, repo),
-		"--jq", `{tagName: .tag_name, publishedAt: .published_at, isLatest: true}`,
+		"--jq", `{tagName: .tag_name, publishedAt: .published_at, isLatest: true, assets: [.assets[] | {name: .name, downloadCount: .download_count, size: .size}]}`,
 	)
 	if err != nil {
 		return nil, err
