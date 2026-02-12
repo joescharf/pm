@@ -1,11 +1,14 @@
-/*
-Copyright © 2026 Joe Scharf joe@joescharf.com
-
-*/
 package main
 
 import "github.com/joescharf/pm/cmd"
 
+// Set by goreleaser ldflags.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
-	cmd.Execute()
+	cmd.Execute(version, commit, date)
 }

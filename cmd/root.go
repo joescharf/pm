@@ -1,77 +1,117 @@
-/*
-Copyright © 2026 Joe Scharf joe@joescharf.com
-
-*/
 package cmd
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/store"
 )
 
-var cfgFile string
+// Package-level shared dependencies, initialized in cobra.OnInitialize.
+var (
+	ui      *output.UI
+	dataStore store.Store
 
-// rootCmd represents the base command when called without any subcommands
+	verbose bool
+	dryRun  bool
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "pm",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Short: "Program Manager - track projects, issues, and AI agents",
+	Long: `pm manages multiple AI-based app development projects.
+It tracks projects, issues, agent sessions, and provides a dashboard
+for managing parallel development across multiple repos.`,
+	SilenceUsage:      true,
+	SilenceErrors:     true,
+	DisableAutoGenTag: true,
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
+// Execute is the main entry point called from main.go.
+func Execute(version, commit, date string) {
+	buildVersion = version
+	buildCommit = commit
+	buildDate = date
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(initConfig, initDeps)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pm.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
+	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "Show what would happen without making changes")
+	rootCmd.PersistentFlags().String("config", "", "Config file (default ~/.config/pm/config.yaml)")
 }
 
-// initConfig reads in config file and ENV variables if set.
 func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
+	// If --config is explicitly set, use that file
+	if cfgFile, _ := rootCmd.PersistentFlags().GetString("config"); cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// Find home directory.
 		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot find home directory: %v\n", err)
+			os.Exit(1)
+		}
 
-		// Search config in home directory with name ".pm" (without extension).
-		viper.AddConfigPath(home)
+		configDir := filepath.Join(home, ".config", "pm")
+		viper.AddConfigPath(configDir)
+		viper.SetConfigName("config")
 		viper.SetConfigType("yaml")
-		viper.SetConfigName(".pm")
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	viper.SetEnvPrefix("PM")
+	viper.AutomaticEnv()
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+	// Defaults via viper.SetDefault()
+	home, _ := os.UserHomeDir()
+	defaultConfigDir := filepath.Join(home, ".config", "pm")
+
+	viper.SetDefault("state_dir", defaultConfigDir)
+	viper.SetDefault("db_path", filepath.Join(defaultConfigDir, "pm.db"))
+	viper.SetDefault("github.default_org", "")
+	viper.SetDefault("agent.model", "opus")
+	viper.SetDefault("agent.auto_launch", false)
+
+	// Read config file if it exists (optional)
+	_ = viper.ReadInConfig()
+}
+
+func initDeps() {
+	ui = output.New()
+	ui.Verbose = verbose
+	ui.DryRun = dryRun
+
+	// Initialize store lazily — only when commands actually need it.
+	// This allows config/version commands to run without a db.
+}
+
+// getStore returns the shared store, initializing it on first call.
+func getStore() (store.Store, error) {
+	if dataStore != nil {
+		return dataStore, nil
 	}
+
+	dbPath := viper.GetString("db_path")
+	s, err := store.NewSQLiteStore(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	if err := s.Migrate(rootCmd.Context()); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("migrate database: %w", err)
+	}
+
+	dataStore = s
+	return dataStore, nil
 }

@@ -1,0 +1,402 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/joescharf/pm/internal/git"
+	"github.com/joescharf/pm/internal/golang"
+	"github.com/joescharf/pm/internal/models"
+	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/store"
+)
+
+var (
+	projectGroup string
+	projectName  string
+)
+
+var projectCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Manage tracked projects",
+	Long:  "Add, remove, list, and show tracked development projects.",
+}
+
+var projectAddCmd = &cobra.Command{
+	Use:   "add <path>",
+	Short: "Add a project to tracking",
+	Long:  "Add a project directory to pm tracking. Use '.' for the current directory.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return projectAddRun(args[0])
+	},
+}
+
+var projectRemoveCmd = &cobra.Command{
+	Use:     "remove <name-or-path>",
+	Aliases: []string{"rm"},
+	Short:   "Remove a project from tracking",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return projectRemoveRun(args[0])
+	},
+}
+
+var projectListCmd = &cobra.Command{
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List tracked projects",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return projectListRun()
+	},
+}
+
+var projectShowCmd = &cobra.Command{
+	Use:   "show <name>",
+	Short: "Show detailed project information",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return projectShowRun(args[0])
+	},
+}
+
+var projectScanCmd = &cobra.Command{
+	Use:   "scan <directory>",
+	Short: "Auto-discover git repos in a directory",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return projectScanRun(args[0])
+	},
+}
+
+func init() {
+	projectAddCmd.Flags().StringVar(&projectName, "name", "", "Override project name (default: directory name)")
+	projectAddCmd.Flags().StringVar(&projectGroup, "group", "", "Project group name")
+
+	projectListCmd.Flags().StringVar(&projectGroup, "group", "", "Filter by group")
+
+	projectCmd.AddCommand(projectAddCmd)
+	projectCmd.AddCommand(projectRemoveCmd)
+	projectCmd.AddCommand(projectListCmd)
+	projectCmd.AddCommand(projectShowCmd)
+	projectCmd.AddCommand(projectScanCmd)
+	rootCmd.AddCommand(projectCmd)
+}
+
+func projectAddRun(rawPath string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+
+	// Resolve path
+	absPath, err := filepath.Abs(rawPath)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+
+	// Verify directory exists
+	info, err := os.Stat(absPath)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("not a directory: %s", absPath)
+	}
+
+	// Determine name
+	name := projectName
+	if name == "" {
+		name = filepath.Base(absPath)
+	}
+
+	// Detect language
+	lang := golang.DetectLanguage(absPath)
+
+	// Try to get remote URL
+	gc := git.NewClient()
+	remoteURL, _ := gc.RemoteURL(absPath)
+
+	p := &models.Project{
+		Name:      name,
+		Path:      absPath,
+		Language:  lang,
+		RepoURL:   remoteURL,
+		GroupName: projectGroup,
+	}
+
+	if dryRun {
+		ui.DryRunMsg("Would add project: %s (%s)", name, absPath)
+		return nil
+	}
+
+	if err := s.CreateProject(context.Background(), p); err != nil {
+		return fmt.Errorf("add project: %w", err)
+	}
+
+	ui.Success("Added project: %s (%s)", output.Cyan(name), absPath)
+	if lang != "" {
+		ui.VerboseLog("Language: %s", lang)
+	}
+	if remoteURL != "" {
+		ui.VerboseLog("Remote: %s", remoteURL)
+	}
+	return nil
+}
+
+func projectRemoveRun(nameOrPath string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	p, err := resolveProject(ctx, s, nameOrPath)
+	if err != nil {
+		return err
+	}
+
+	if dryRun {
+		ui.DryRunMsg("Would remove project: %s", p.Name)
+		return nil
+	}
+
+	if err := s.DeleteProject(ctx, p.ID); err != nil {
+		return fmt.Errorf("remove project: %w", err)
+	}
+
+	ui.Success("Removed project: %s", output.Cyan(p.Name))
+	return nil
+}
+
+func projectListRun() error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+
+	projects, err := s.ListProjects(context.Background(), projectGroup)
+	if err != nil {
+		return err
+	}
+
+	if len(projects) == 0 {
+		ui.Info("No projects tracked. Use 'pm project add <path>' to get started.")
+		return nil
+	}
+
+	table := ui.Table([]string{"Name", "Path", "Language", "Group"})
+	for _, p := range projects {
+		table.Append([]string{
+			output.Cyan(p.Name),
+			p.Path,
+			p.Language,
+			p.GroupName,
+		})
+	}
+	table.Render()
+	return nil
+}
+
+func projectShowRun(name string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	p, err := resolveProject(ctx, s, name)
+	if err != nil {
+		return err
+	}
+
+	gc := git.NewClient()
+	ga := golang.NewAnalyzer()
+
+	// Header
+	fmt.Fprintf(ui.Out, "%s\n", output.Cyan(p.Name))
+	fmt.Fprintf(ui.Out, "  Path:       %s\n", p.Path)
+	if p.Description != "" {
+		fmt.Fprintf(ui.Out, "  Desc:       %s\n", p.Description)
+	}
+	if p.GroupName != "" {
+		fmt.Fprintf(ui.Out, "  Group:      %s\n", p.GroupName)
+	}
+	if p.Language != "" {
+		fmt.Fprintf(ui.Out, "  Language:   %s\n", p.Language)
+	}
+	if p.RepoURL != "" {
+		fmt.Fprintf(ui.Out, "  Remote:     %s\n", p.RepoURL)
+	}
+	fmt.Fprintln(ui.Out)
+
+	// Git info
+	if branch, err := gc.CurrentBranch(p.Path); err == nil {
+		fmt.Fprintf(ui.Out, "  Branch:     %s\n", branch)
+	}
+	if dirty, err := gc.IsDirty(p.Path); err == nil {
+		status := output.Green("clean")
+		if dirty {
+			status = output.Red("dirty")
+		}
+		fmt.Fprintf(ui.Out, "  Status:     %s\n", status)
+	}
+	if hash, err := gc.LastCommitHash(p.Path); err == nil {
+		msg, _ := gc.LastCommitMessage(p.Path)
+		fmt.Fprintf(ui.Out, "  Last commit: %s %s\n", hash, msg)
+	}
+	if date, err := gc.LastCommitDate(p.Path); err == nil {
+		fmt.Fprintf(ui.Out, "  Activity:   %s\n", timeAgo(date))
+	}
+
+	// Worktrees
+	if wts, err := gc.WorktreeList(p.Path); err == nil && len(wts) > 1 {
+		fmt.Fprintf(ui.Out, "  Worktrees:  %d\n", len(wts)-1) // exclude main
+	}
+
+	// Go-specific
+	if golang.IsGoProject(p.Path) {
+		if ver, err := ga.GoVersion(p.Path); err == nil {
+			fmt.Fprintf(ui.Out, "  Go version: %s\n", ver)
+		}
+		if mod, err := ga.ModulePath(p.Path); err == nil {
+			fmt.Fprintf(ui.Out, "  Module:     %s\n", mod)
+		}
+	}
+
+	// Issue counts
+	issues, err := s.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID})
+	if err == nil && len(issues) > 0 {
+		open, inProg := 0, 0
+		for _, i := range issues {
+			switch i.Status {
+			case models.IssueStatusOpen:
+				open++
+			case models.IssueStatusInProgress:
+				inProg++
+			}
+		}
+		fmt.Fprintf(ui.Out, "  Issues:     %d open, %d in-progress\n", open, inProg)
+	}
+
+	// GitHub info (best effort)
+	if p.RepoURL != "" {
+		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
+			ghClient := git.NewGitHubClient()
+			if rel, err := ghClient.LatestRelease(owner, repo); err == nil {
+				fmt.Fprintf(ui.Out, "  Release:    %s (%s)\n", rel.TagName, rel.PublishedAt)
+			}
+		}
+	}
+
+	return nil
+}
+
+func projectScanRun(dir string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+
+	entries, err := os.ReadDir(absDir)
+	if err != nil {
+		return fmt.Errorf("read directory: %w", err)
+	}
+
+	gc := git.NewClient()
+	ctx := context.Background()
+	added := 0
+
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		entryPath := filepath.Join(absDir, entry.Name())
+
+		// Check if it's a git repo
+		if _, err := gc.RepoRoot(entryPath); err != nil {
+			continue
+		}
+
+		// Check if already tracked
+		if _, err := s.GetProjectByPath(ctx, entryPath); err == nil {
+			ui.VerboseLog("Already tracked: %s", entry.Name())
+			continue
+		}
+
+		lang := golang.DetectLanguage(entryPath)
+		remoteURL, _ := gc.RemoteURL(entryPath)
+
+		p := &models.Project{
+			Name:     entry.Name(),
+			Path:     entryPath,
+			Language: lang,
+			RepoURL:  remoteURL,
+		}
+
+		if dryRun {
+			ui.DryRunMsg("Would add: %s (%s)", entry.Name(), entryPath)
+			added++
+			continue
+		}
+
+		if err := s.CreateProject(ctx, p); err != nil {
+			ui.Warning("Skipped %s: %v", entry.Name(), err)
+			continue
+		}
+
+		ui.Success("Added: %s", output.Cyan(entry.Name()))
+		added++
+	}
+
+	if added == 0 {
+		ui.Info("No new projects found in %s", absDir)
+	} else {
+		ui.Info("Discovered %d project(s)", added)
+	}
+	return nil
+}
+
+// resolveProject finds a project by name or path.
+func resolveProject(ctx context.Context, s store.Store, nameOrPath string) (*models.Project, error) {
+	// Try by name first
+	if p, err := s.GetProjectByName(ctx, nameOrPath); err == nil {
+		return p, nil
+	}
+
+	// Try by path
+	absPath, _ := filepath.Abs(nameOrPath)
+	if p, err := s.GetProjectByPath(ctx, absPath); err == nil {
+		return p, nil
+	}
+
+	return nil, fmt.Errorf("project not found: %s", nameOrPath)
+}
+
+// timeAgo returns a human-readable duration from a time.
+func timeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "1d ago"
+		}
+		return fmt.Sprintf("%dd ago", days)
+	}
+}
