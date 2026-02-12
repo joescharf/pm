@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"os/exec"
+	"runtime"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -42,10 +44,30 @@ var serveCmd = &cobra.Command{
 		mux.Handle("/", uiHandler)
 
 		addr := fmt.Sprintf(":%d", port)
-		ui.Info("Serving API at http://localhost%s/api/v1/", addr)
-		ui.Info("Serving UI at http://localhost%s", addr)
+		url := fmt.Sprintf("http://localhost%s", addr)
+		ui.Info("Serving API at %s/api/v1/", url)
+		ui.Info("Serving UI at %s", url)
+
+		// Open browser
+		openBrowser(url)
+
 		return http.ListenAndServe(addr, mux)
 	},
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		return
+	}
+	_ = cmd.Start()
 }
 
 func init() {
