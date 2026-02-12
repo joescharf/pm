@@ -197,3 +197,108 @@ func TestGetProject_NotFound(t *testing.T) {
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+func TestUpdateProject_PartialUpdate_PreservesOmittedFields(t *testing.T) {
+	srv, s := setupTestServer(t)
+	router := srv.Router()
+	ctx := context.Background()
+
+	// Create a project with all fields populated
+	p := &models.Project{
+		Name:        "full-project",
+		Path:        "/home/user/projects/full",
+		Description: "Original description",
+		RepoURL:     "https://github.com/test/full-project",
+		Language:    "Go",
+		GroupName:   "backend",
+	}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Verify the project was created with all fields
+	original, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	require.Equal(t, "full-project", original.Name)
+	require.Equal(t, "/home/user/projects/full", original.Path)
+	require.Equal(t, "Original description", original.Description)
+	require.Equal(t, "https://github.com/test/full-project", original.RepoURL)
+	require.Equal(t, "Go", original.Language)
+	require.Equal(t, "backend", original.GroupName)
+
+	// Send a PUT with only Description changed — omit other fields entirely.
+	// With patch semantics, omitted keys should NOT overwrite existing values.
+	patchBody := `{"Description":"Updated description"}`
+	req := httptest.NewRequest("PUT", "/api/v1/projects/"+p.ID, bytes.NewBufferString(patchBody))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// Decode the response
+	var updated models.Project
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &updated))
+
+	// The Description should be updated
+	assert.Equal(t, "Updated description", updated.Description)
+
+	// All other fields MUST be preserved (not wiped to zero values)
+	assert.Equal(t, "full-project", updated.Name, "Name should be preserved")
+	assert.Equal(t, "/home/user/projects/full", updated.Path, "Path should be preserved")
+	assert.Equal(t, "https://github.com/test/full-project", updated.RepoURL, "RepoURL should be preserved")
+	assert.Equal(t, "Go", updated.Language, "Language should be preserved")
+	assert.Equal(t, "backend", updated.GroupName, "GroupName should be preserved")
+
+	// Double-check by reading from the store directly
+	fromDB, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Updated description", fromDB.Description)
+	assert.Equal(t, "full-project", fromDB.Name, "Name in DB should be preserved")
+	assert.Equal(t, "/home/user/projects/full", fromDB.Path, "Path in DB should be preserved")
+	assert.Equal(t, "https://github.com/test/full-project", fromDB.RepoURL, "RepoURL in DB should be preserved")
+	assert.Equal(t, "Go", fromDB.Language, "Language in DB should be preserved")
+	assert.Equal(t, "backend", fromDB.GroupName, "GroupName in DB should be preserved")
+}
+
+func TestUpdateProject_EmptyStringsShouldNotOverwrite(t *testing.T) {
+	srv, s := setupTestServer(t)
+	router := srv.Router()
+	ctx := context.Background()
+
+	// Create a project with all fields populated
+	p := &models.Project{
+		Name:        "full-project",
+		Path:        "/home/user/projects/full",
+		Description: "Original description",
+		RepoURL:     "https://github.com/test/full-project",
+		Language:    "Go",
+		GroupName:   "backend",
+	}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Simulate what the frontend does: send all fields, but some are empty strings.
+	// This is the actual bug — the form sends empty strings for fields the user
+	// didn't fill in, and the old handler overwrites existing data with "".
+	patchBody := `{"Name":"full-project","Description":"Updated description","Path":"","RepoURL":"","Language":"","GroupName":""}`
+	req := httptest.NewRequest("PUT", "/api/v1/projects/"+p.ID, bytes.NewBufferString(patchBody))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var updated models.Project
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &updated))
+
+	// Description should be updated
+	assert.Equal(t, "Updated description", updated.Description)
+
+	// Fields sent as empty strings should NOT overwrite existing non-empty values
+	assert.Equal(t, "/home/user/projects/full", updated.Path, "Path should be preserved when sent as empty string")
+	assert.Equal(t, "https://github.com/test/full-project", updated.RepoURL, "RepoURL should be preserved when sent as empty string")
+	assert.Equal(t, "Go", updated.Language, "Language should be preserved when sent as empty string")
+	assert.Equal(t, "backend", updated.GroupName, "GroupName should be preserved when sent as empty string")
+
+	// Verify in DB too
+	fromDB, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "/home/user/projects/full", fromDB.Path, "Path in DB should be preserved")
+	assert.Equal(t, "https://github.com/test/full-project", fromDB.RepoURL, "RepoURL in DB should be preserved")
+	assert.Equal(t, "Go", fromDB.Language, "Language in DB should be preserved")
+	assert.Equal(t, "backend", fromDB.GroupName, "GroupName in DB should be preserved")
+}

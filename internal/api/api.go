@@ -84,6 +84,15 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// patchString applies a string value from a JSON patch map to the target if the key is present and non-empty.
+func patchString(patch map[string]any, key string, target *string) {
+	if v, ok := patch[key]; ok {
+		if str, ok := v.(string); ok && str != "" {
+			*target = str
+		}
+	}
+}
+
 // --- Projects ---
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
@@ -125,17 +134,36 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var p models.Project
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	p.ID = id
-	if err := s.store.UpdateProject(r.Context(), &p); err != nil {
+	existing, err := s.store.GetProject(r.Context(), id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+
+	var patch map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	// Selectively merge only keys present in the patch with non-empty values.
+	// Empty strings are treated as "not provided" to avoid wiping existing data.
+	patchString(patch, "Name", &existing.Name)
+	patchString(patch, "Path", &existing.Path)
+	patchString(patch, "Description", &existing.Description)
+	patchString(patch, "RepoURL", &existing.RepoURL)
+	patchString(patch, "Language", &existing.Language)
+	patchString(patch, "GroupName", &existing.GroupName)
+
+	if err := s.store.UpdateProject(r.Context(), existing); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, existing)
 }
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
