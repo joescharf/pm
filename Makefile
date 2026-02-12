@@ -25,7 +25,7 @@ install: ## Install the binary to $GOPATH/bin
 run: build ## Build and run the binary
 	./bin/$(BINARY_NAME)
 
-serve: build ## Start the embedded web UI server
+serve: all ## Start the embedded web UI server
 	./bin/$(BINARY_NAME) serve
 
 clean: ## Remove build artifacts
