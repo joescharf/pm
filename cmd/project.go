@@ -66,6 +66,19 @@ var projectShowCmd = &cobra.Command{
 	},
 }
 
+var projectRefreshCmd = &cobra.Command{
+	Use:   "refresh [name]",
+	Short: "Refresh project metadata",
+	Long:  "Re-detect language, remote URL, and fetch GitHub description for one or all projects.",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return projectRefreshOneRun(args[0])
+		}
+		return projectRefreshAllRun()
+	},
+}
+
 var projectScanCmd = &cobra.Command{
 	Use:   "scan <directory>",
 	Short: "Auto-discover git repos in a directory",
@@ -85,6 +98,7 @@ func init() {
 	projectCmd.AddCommand(projectRemoveCmd)
 	projectCmd.AddCommand(projectListCmd)
 	projectCmd.AddCommand(projectShowCmd)
+	projectCmd.AddCommand(projectRefreshCmd)
 	projectCmd.AddCommand(projectScanCmd)
 	rootCmd.AddCommand(projectCmd)
 }
@@ -177,8 +191,9 @@ func projectListRun() error {
 	if err != nil {
 		return err
 	}
+	ctx := context.Background()
 
-	projects, err := s.ListProjects(context.Background(), projectGroup)
+	projects, err := s.ListProjects(ctx, projectGroup)
 	if err != nil {
 		return err
 	}
@@ -188,13 +203,17 @@ func projectListRun() error {
 		return nil
 	}
 
-	table := ui.Table([]string{"Name", "Path", "Language", "Group"})
+	table := ui.Table([]string{"Name", "Path", "Language", "Group", "Open Issues"})
 	for _, p := range projects {
+		issues, _ := s.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID, Status: models.IssueStatusOpen})
+		openCount := fmt.Sprintf("%d", len(issues))
+
 		table.Append([]string{
 			output.Cyan(p.Name),
 			p.Path,
 			p.Language,
 			p.GroupName,
+			openCount,
 		})
 	}
 	table.Render()
@@ -378,6 +397,137 @@ func projectScanRun(dir string) error {
 		ui.Info("Discovered %d project(s)", added)
 	}
 	return nil
+}
+
+func projectRefreshOneRun(nameOrPath string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	p, err := resolveProject(ctx, s, nameOrPath)
+	if err != nil {
+		return err
+	}
+
+	gc := git.NewClient()
+	ghc := git.NewGitHubClient()
+
+	if dryRun {
+		ui.DryRunMsg("Would refresh project: %s", p.Name)
+		return nil
+	}
+
+	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	if err != nil {
+		return fmt.Errorf("refresh %s: %w", p.Name, err)
+	}
+
+	if changed {
+		ui.Success("Refreshed project: %s", output.Cyan(p.Name))
+	} else {
+		ui.Info("No changes for project: %s", p.Name)
+	}
+	return nil
+}
+
+func projectRefreshAllRun() error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	projects, err := s.ListProjects(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	if len(projects) == 0 {
+		ui.Info("No projects tracked.")
+		return nil
+	}
+
+	gc := git.NewClient()
+	ghc := git.NewGitHubClient()
+	refreshed := 0
+
+	for _, p := range projects {
+		if dryRun {
+			ui.DryRunMsg("Would refresh: %s", p.Name)
+			refreshed++
+			continue
+		}
+
+		changed, err := refreshProject(ctx, s, p, gc, ghc)
+		if err != nil {
+			ui.Warning("Failed to refresh %s: %v", p.Name, err)
+			continue
+		}
+		if changed {
+			ui.Success("Refreshed: %s", output.Cyan(p.Name))
+			refreshed++
+		} else {
+			ui.VerboseLog("No changes: %s", p.Name)
+		}
+	}
+
+	ui.Info("Refreshed %d of %d project(s)", refreshed, len(projects))
+	return nil
+}
+
+// refreshProject re-detects metadata for a project and persists changes.
+// Returns true if any field was updated.
+func refreshProject(ctx context.Context, s store.Store, p *models.Project, gc git.Client, ghc git.GitHubClient) (bool, error) {
+	changed := false
+
+	// Validate path still exists
+	if _, err := os.Stat(p.Path); err != nil {
+		ui.Warning("Project path missing: %s", p.Path)
+	}
+
+	// Re-detect language
+	if lang := golang.DetectLanguage(p.Path); lang != "" && lang != p.Language {
+		ui.VerboseLog("Language: %s -> %s", p.Language, lang)
+		p.Language = lang
+		changed = true
+	}
+
+	// Re-detect remote URL
+	if url, _ := gc.RemoteURL(p.Path); url != "" && url != p.RepoURL {
+		ui.VerboseLog("RepoURL: %s -> %s", p.RepoURL, url)
+		p.RepoURL = url
+		changed = true
+	}
+
+	// Fetch GitHub metadata if we have a repo URL
+	if p.RepoURL != "" {
+		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
+			if info, err := ghc.RepoInfo(owner, repo); err == nil && info != nil {
+				// Fill description only if currently empty
+				if p.Description == "" && info.Description != "" {
+					ui.VerboseLog("Description: (empty) -> %s", info.Description)
+					p.Description = info.Description
+					changed = true
+				}
+				// Use GitHub language as fallback if local detection returned empty
+				if p.Language == "" && info.Language != "" {
+					ui.VerboseLog("Language (GitHub): -> %s", info.Language)
+					p.Language = info.Language
+					changed = true
+				}
+			}
+		}
+	}
+
+	if changed {
+		if err := s.UpdateProject(ctx, p); err != nil {
+			return false, fmt.Errorf("update project: %w", err)
+		}
+	}
+
+	return changed, nil
 }
 
 // resolveProject finds a project by name or path.
