@@ -59,12 +59,34 @@ func statusOverviewRun() error {
 	}
 
 	gc := git.NewClient()
+	ghClient := git.NewGitHubClient()
 	scorer := health.NewScorer()
 
-	table := ui.Table([]string{"Project", "Branch", "Status", "Issues", "Health", "Activity"})
+	// Fetch version info in parallel
+	type projectVersion struct {
+		index int
+		vi    *versionInfo
+	}
+	versionCh := make(chan projectVersion, len(projects))
 
-	for _, p := range projects {
+	for i, p := range projects {
+		go func(idx int, proj *models.Project) {
+			vi := getVersionInfo(gc, ghClient, proj)
+			versionCh <- projectVersion{index: idx, vi: vi}
+		}(i, p)
+	}
+
+	versions := make([]*versionInfo, len(projects))
+	for range projects {
+		pv := <-versionCh
+		versions[pv.index] = pv.vi
+	}
+
+	table := ui.Table([]string{"Project", "Version", "Branch", "Status", "Issues", "Health", "Activity"})
+
+	for i, p := range projects {
 		meta := gatherMetadata(gc, p)
+		populateReleaseMeta(meta, versions[i])
 
 		// Get issues
 		issues, _ := s.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID})
@@ -89,8 +111,14 @@ func statusOverviewRun() error {
 			activity = timeAgo(meta.LastCommitDate)
 		}
 
+		versionStr := "-"
+		if versions[i] != nil {
+			versionStr = versions[i].Version
+		}
+
 		table.Append([]string{
 			output.Cyan(p.Name),
+			versionStr,
 			branch,
 			gitStatus,
 			issueStr,
@@ -151,4 +179,47 @@ func formatIssueCounts(issues []*models.Issue) string {
 		}
 	}
 	return fmt.Sprintf("%d/%d", open, inProg)
+}
+
+type versionInfo struct {
+	Version string
+	Date    time.Time
+	Source  string // "github" or "git-tag"
+	Assets  []git.ReleaseAsset
+}
+
+func getVersionInfo(gc git.Client, ghClient git.GitHubClient, p *models.Project) *versionInfo {
+	// Primary: GitHub release
+	if p.RepoURL != "" {
+		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
+			if rel, err := ghClient.LatestRelease(owner, repo); err == nil {
+				vi := &versionInfo{
+					Version: rel.TagName,
+					Source:  "github",
+					Assets:  rel.Assets,
+				}
+				if t, err := time.Parse(time.RFC3339, rel.PublishedAt); err == nil {
+					vi.Date = t
+				}
+				return vi
+			}
+		}
+	}
+
+	// Fallback: local git tag
+	if tag, err := gc.LatestTag(p.Path); err == nil {
+		return &versionInfo{
+			Version: tag,
+			Source:  "git-tag",
+		}
+	}
+
+	return nil
+}
+
+func populateReleaseMeta(meta *health.ProjectMetadata, vi *versionInfo) {
+	if vi != nil {
+		meta.LatestRelease = vi.Version
+		meta.ReleaseDate = vi.Date
+	}
 }
