@@ -44,6 +44,9 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const config = statusConfig[status];
+  if (!config) {
+    return <Badge variant="outline" className={className}>{status || "—"}</Badge>;
+  }
   return (
     <Badge variant="outline" className={cn("border-transparent", config.className, className)}>
       {config.label}
@@ -58,6 +61,9 @@ interface PriorityBadgeProps {
 
 export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
   const config = priorityConfig[priority];
+  if (!config) {
+    return <Badge variant="secondary" className={className}>{priority || "—"}</Badge>;
+  }
   return (
     <Badge variant={config.variant} className={cn(config.className, className)}>
       {config.label}
