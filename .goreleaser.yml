@@ -1,0 +1,124 @@
+# goreleaser release --clean --verbose
+# goreleaser release --snapshot --clean --skip homebrew,docker
+
+project_name: pm
+version: 2
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: pm
+    binary: pm
+    dir: .
+    main: main.go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -X github.com/joescharf/pm/cmd.version={{ .Version }}
+      - -X github.com/joescharf/pm/cmd.commit={{ .Commit }}
+      - -X github.com/joescharf/pm/cmd.date={{ .Date }}
+
+  - id: pm-macos
+    binary: pm
+    dir: .
+    main: main.go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+    ldflags:
+      - -X github.com/joescharf/pm/cmd.version={{ .Version }}
+      - -X github.com/joescharf/pm/cmd.commit={{ .Commit }}
+      - -X github.com/joescharf/pm/cmd.date={{ .Date }}
+
+# MacOS Universal Binaries
+universal_binaries:
+  - id: pm-macos
+    replace: true
+
+archives:
+  - id: pm-linux-archive
+    ids:
+      - pm
+
+  - id: pm-archive
+    ids:
+      - pm-macos
+    formats:
+      - zip
+    files:
+      - none*
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: joescharf
+    name: pm
+  ids:
+    - pm-archive
+    - pm-linux-archive
+  draft: true
+  replace_existing_draft: true
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-devel"
+
+# Uncomment and configure for Homebrew distribution:
+# homebrew_casks:
+#   - name: pm
+#     ids:
+#       - pm-archive
+#     binaries:
+#       - pm
+#     repository:
+#       owner: joescharf
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+#     skip_upload: auto
+#     commit_author:
+#       name: releaserbot
+#       email: you@example.com
+#     homepage: "https://github.com/joescharf/pm"
+#     description: "Description of pm"
+
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: "Bug fixes"
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+# Multi-platform Docker images
+dockers_v2:
+  - images:
+      - "ghcr.io/joescharf/pm"
+    tags:
+      - "v{{ .Version }}"
+      - "latest"
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "{{ .ProjectName }}"
+      "org.opencontainers.image.url": "https://github.com/joescharf/{{ .ProjectName }}"
+      "org.opencontainers.image.source": "https://github.com/joescharf/{{ .ProjectName }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
