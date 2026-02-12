@@ -387,6 +387,23 @@ func (s *Server) projectHealth(w http.ResponseWriter, r *http.Request) {
 		meta.BranchCount = len(branches)
 	}
 
+	// Version info for release freshness scoring
+	if p.RepoURL != "" {
+		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
+			if rel, err := s.gh.LatestRelease(owner, repo); err == nil {
+				meta.LatestRelease = rel.TagName
+				if t, parseErr := time.Parse(time.RFC3339, rel.PublishedAt); parseErr == nil {
+					meta.ReleaseDate = t
+				}
+			}
+		}
+	}
+	if meta.LatestRelease == "" {
+		if tag, err := s.git.LatestTag(p.Path); err == nil {
+			meta.LatestRelease = tag
+		}
+	}
+
 	issues, _ := s.store.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID})
 	h := s.scorer.Score(p, meta, issues)
 	writeJSON(w, http.StatusOK, h)
