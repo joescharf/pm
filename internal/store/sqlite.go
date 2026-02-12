@@ -334,7 +334,10 @@ func (s *SQLiteStore) ListIssues(ctx context.Context, filter IssueListFilter) ([
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY created_at DESC"
+	query += ` ORDER BY
+		CASE status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'done' THEN 2 WHEN 'closed' THEN 3 ELSE 4 END,
+		CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+		created_at DESC`
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

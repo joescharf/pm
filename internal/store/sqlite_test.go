@@ -379,3 +379,54 @@ func TestUpdateProject_NotFound(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
+
+func TestListIssues_SortedByStatusThenPriority(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	p := &models.Project{Name: "sort-test", Path: "/tmp/sort"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Create issues in deliberate disorder
+	issues := []struct {
+		title    string
+		status   models.IssueStatus
+		priority models.IssuePriority
+	}{
+		{"closed-low", models.IssueStatusClosed, models.IssuePriorityLow},
+		{"open-low", models.IssueStatusOpen, models.IssuePriorityLow},
+		{"open-high", models.IssueStatusOpen, models.IssuePriorityHigh},
+		{"in-progress-medium", models.IssueStatusInProgress, models.IssuePriorityMedium},
+		{"open-medium", models.IssueStatusOpen, models.IssuePriorityMedium},
+		{"done-high", models.IssueStatusDone, models.IssuePriorityHigh},
+	}
+
+	for _, iss := range issues {
+		i := &models.Issue{
+			ProjectID: p.ID,
+			Title:     iss.title,
+			Status:    iss.status,
+			Priority:  iss.priority,
+			Type:      models.IssueTypeFeature,
+		}
+		require.NoError(t, s.CreateIssue(ctx, i))
+		time.Sleep(5 * time.Millisecond) // ensure distinct created_at
+	}
+
+	result, err := s.ListIssues(ctx, IssueListFilter{ProjectID: p.ID})
+	require.NoError(t, err)
+	require.Len(t, result, 6)
+
+	titles := make([]string, len(result))
+	for i, r := range result {
+		titles[i] = r.Title
+	}
+
+	// Expected: open (high, medium, low) -> in_progress -> done -> closed
+	assert.Equal(t, "open-high", titles[0])
+	assert.Equal(t, "open-medium", titles[1])
+	assert.Equal(t, "open-low", titles[2])
+	assert.Equal(t, "in-progress-medium", titles[3])
+	assert.Equal(t, "done-high", titles[4])
+	assert.Equal(t, "closed-low", titles[5])
+}
