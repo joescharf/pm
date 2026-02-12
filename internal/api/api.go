@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/health"
@@ -238,13 +239,17 @@ func (s *Server) deleteIssue(w http.ResponseWriter, r *http.Request) {
 // --- Status ---
 
 type statusEntry struct {
-	Project  *models.Project `json:"project"`
-	Branch   string          `json:"branch"`
-	IsDirty  bool            `json:"isDirty"`
-	OpenIssues    int        `json:"openIssues"`
-	InProgress    int        `json:"inProgressIssues"`
-	Health        int        `json:"health"`
-	LastActivity  string     `json:"lastActivity"`
+	Project       *models.Project    `json:"project"`
+	Branch        string             `json:"branch"`
+	IsDirty       bool               `json:"isDirty"`
+	OpenIssues    int                `json:"openIssues"`
+	InProgress    int                `json:"inProgressIssues"`
+	Health        int                `json:"health"`
+	LastActivity  string             `json:"lastActivity"`
+	LatestVersion string             `json:"latestVersion,omitempty"`
+	ReleaseDate   string             `json:"releaseDate,omitempty"`
+	VersionSource string             `json:"versionSource,omitempty"`
+	ReleaseAssets []git.ReleaseAsset `json:"releaseAssets,omitempty"`
 }
 
 func (s *Server) statusOverview(w http.ResponseWriter, r *http.Request) {
@@ -277,17 +282,25 @@ func (s *Server) statusProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) buildStatusEntry(ctx context.Context, p *models.Project) statusEntry {
 	entry := statusEntry{Project: p}
+	meta := &health.ProjectMetadata{}
 
+	// Git info
 	if branch, err := s.git.CurrentBranch(p.Path); err == nil {
 		entry.Branch = branch
 	}
 	if dirty, err := s.git.IsDirty(p.Path); err == nil {
 		entry.IsDirty = dirty
+		meta.IsDirty = dirty
 	}
 	if date, err := s.git.LastCommitDate(p.Path); err == nil {
 		entry.LastActivity = date.Format("2006-01-02T15:04:05Z")
+		meta.LastCommitDate = date
+	}
+	if branches, err := s.git.BranchList(p.Path); err == nil {
+		meta.BranchCount = len(branches)
 	}
 
+	// Issues
 	issues, _ := s.store.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID})
 	for _, i := range issues {
 		switch i.Status {
@@ -298,17 +311,30 @@ func (s *Server) buildStatusEntry(ctx context.Context, p *models.Project) status
 		}
 	}
 
-	meta := &health.ProjectMetadata{}
-	if dirty, err := s.git.IsDirty(p.Path); err == nil {
-		meta.IsDirty = dirty
+	// Version info: GitHub release primary, local git tag fallback
+	if p.RepoURL != "" {
+		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
+			if rel, err := s.gh.LatestRelease(owner, repo); err == nil {
+				entry.LatestVersion = rel.TagName
+				entry.ReleaseDate = rel.PublishedAt
+				entry.VersionSource = "github"
+				entry.ReleaseAssets = rel.Assets
+				if t, parseErr := time.Parse(time.RFC3339, rel.PublishedAt); parseErr == nil {
+					meta.LatestRelease = rel.TagName
+					meta.ReleaseDate = t
+				}
+			}
+		}
 	}
-	if date, err := s.git.LastCommitDate(p.Path); err == nil {
-		meta.LastCommitDate = date
-	}
-	if branches, err := s.git.BranchList(p.Path); err == nil {
-		meta.BranchCount = len(branches)
+	if entry.LatestVersion == "" {
+		if tag, err := s.git.LatestTag(p.Path); err == nil {
+			entry.LatestVersion = tag
+			entry.VersionSource = "git-tag"
+			meta.LatestRelease = tag
+		}
 	}
 
+	// Health score (with fully populated meta)
 	h := s.scorer.Score(p, meta, issues)
 	entry.Health = h.Total
 

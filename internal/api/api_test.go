@@ -161,6 +161,33 @@ func TestCORS(t *testing.T) {
 	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
 }
 
+func TestStatusOverview_HasVersionFields(t *testing.T) {
+	srv, s := setupTestServer(t)
+	router := srv.Router()
+	ctx := context.Background()
+
+	p := &models.Project{Name: "status-test", Path: "/tmp/status-test"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	req := httptest.NewRequest("GET", "/api/v1/status", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Verify JSON structure includes version fields
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &entries))
+	require.Len(t, entries, 1)
+
+	// The entry should have standard fields
+	_, hasProject := entries[0]["project"]
+	assert.True(t, hasProject, "should have project field")
+	_, hasBranch := entries[0]["branch"]
+	assert.True(t, hasBranch, "should have branch field")
+	_, hasHealth := entries[0]["health"]
+	assert.True(t, hasHealth, "should have health field")
+}
+
 func TestGetProject_NotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	router := srv.Router()
