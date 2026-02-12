@@ -282,12 +282,26 @@ func projectShowRun(name string) error {
 		fmt.Fprintf(ui.Out, "  Issues:     %d open, %d in-progress\n", open, inProg)
 	}
 
-	// GitHub info (best effort)
-	if p.RepoURL != "" {
-		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
-			ghClient := git.NewGitHubClient()
-			if rel, err := ghClient.LatestRelease(owner, repo); err == nil {
-				fmt.Fprintf(ui.Out, "  Release:    %s (%s)\n", rel.TagName, rel.PublishedAt)
+	// Version / Release info
+	ghClient := git.NewGitHubClient()
+	vi := getVersionInfo(gc, ghClient, p)
+	if vi != nil {
+		fmt.Fprintln(ui.Out)
+		fmt.Fprintf(ui.Out, "  Version:    %s", output.Green(vi.Version))
+		if vi.Source == "github" {
+			fmt.Fprintf(ui.Out, " (GitHub release)")
+		} else {
+			fmt.Fprintf(ui.Out, " (git tag)")
+		}
+		fmt.Fprintln(ui.Out)
+		if !vi.Date.IsZero() {
+			fmt.Fprintf(ui.Out, "  Released:   %s\n", timeAgo(vi.Date))
+		}
+		if len(vi.Assets) > 0 {
+			fmt.Fprintf(ui.Out, "  Assets:     %d files\n", len(vi.Assets))
+			for _, a := range vi.Assets {
+				size := formatBytes(a.Size)
+				fmt.Fprintf(ui.Out, "              %s (%s, %d downloads)\n", a.Name, size, a.DownloadCount)
 			}
 		}
 	}
@@ -399,4 +413,18 @@ func timeAgo(t time.Time) string {
 		}
 		return fmt.Sprintf("%dd ago", days)
 	}
+}
+
+// formatBytes returns a human-readable byte size string.
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
