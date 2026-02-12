@@ -37,8 +37,19 @@ plugins:
   - search
 
 nav:
-  - Welcome: index.md
+  - Home: index.md
   - Getting Started: getting-started.md
+  - Commands:
+    - Overview: commands/index.md
+    - Project: commands/project.md
+    - Issue: commands/issue.md
+    - Status & Health: commands/status.md
+    - Agent: commands/agent.md
+    - Worktree: commands/worktree.md
+    - Other: commands/other.md
+  - Configuration: configuration.md
+  - Workflows: workflows.md
+  - REST API: api.md
 
 markdown_extensions:
   # Python Markdown
