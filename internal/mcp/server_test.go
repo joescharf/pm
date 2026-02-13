@@ -201,7 +201,15 @@ func (m *mockStore) GetAgentSessionByWorktreePath(_ context.Context, path string
 	return nil, fmt.Errorf("no active/idle session for worktree: %s", path)
 }
 
-func (m *mockStore) UpdateAgentSession(_ context.Context, _ *models.AgentSession) error { return nil }
+func (m *mockStore) UpdateAgentSession(_ context.Context, session *models.AgentSession) error {
+	for idx, s := range m.sessions {
+		if s.ID == session.ID {
+			m.sessions[idx] = session
+			return nil
+		}
+	}
+	return fmt.Errorf("session not found: %s", session.ID)
+}
 func (m *mockStore) Migrate(_ context.Context) error                                    { return nil }
 func (m *mockStore) Close() error                                                       { return nil }
 
@@ -1023,6 +1031,66 @@ func TestHandleLaunchAgent_WithCustomBranch(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Tests: pm_close_agent
+// ---------------------------------------------------------------------------
+
+func TestCloseAgentTool_Idle(t *testing.T) {
+	srv, ms, _, _, _ := newTestServer(t)
+	p := seedProject(t, ms, "myapp", "/tmp/myapp")
+
+	ms.sessions = append(ms.sessions, &models.AgentSession{
+		ID:        "sess-123",
+		ProjectID: p.ID,
+		IssueID:   "",
+		Branch:    "feature/test",
+		Status:    models.SessionStatusActive,
+	})
+
+	ctx := context.Background()
+	req := callToolReq("pm_close_agent", map[string]any{"session_id": "sess-123"})
+	result, err := srv.handleCloseAgent(ctx, req)
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	text := resultText(t, result)
+	assert.Contains(t, text, `"status":"idle"`)
+}
+
+func TestCloseAgentTool_Completed(t *testing.T) {
+	srv, ms, _, _, _ := newTestServer(t)
+	p := seedProject(t, ms, "myapp", "/tmp/myapp")
+	issue := seedIssue(t, ms, p.ID, "Fix bug", models.IssueStatusInProgress)
+
+	ms.sessions = append(ms.sessions, &models.AgentSession{
+		ID:        "sess-123",
+		ProjectID: p.ID,
+		IssueID:   issue.ID,
+		Branch:    "feature/fix-bug",
+		Status:    models.SessionStatusActive,
+	})
+
+	ctx := context.Background()
+	req := callToolReq("pm_close_agent", map[string]any{"session_id": "sess-123", "status": "completed"})
+	result, err := srv.handleCloseAgent(ctx, req)
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	text := resultText(t, result)
+	assert.Contains(t, text, `"status":"completed"`)
+	assert.Equal(t, models.IssueStatusDone, ms.issues[0].Status)
+}
+
+func TestCloseAgentTool_MissingSessionID(t *testing.T) {
+	srv, _, _, _, _ := newTestServer(t)
+
+	ctx := context.Background()
+	req := callToolReq("pm_close_agent", map[string]any{})
+	result, err := srv.handleCloseAgent(ctx, req)
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+}
+
+// ---------------------------------------------------------------------------
 // Tests: Integration -- verify all tools are registered via HandleMessage
 // ---------------------------------------------------------------------------
 
@@ -1066,6 +1134,7 @@ func TestMCPIntegration_ListTools(t *testing.T) {
 		"pm_update_issue",
 		"pm_health_score",
 		"pm_launch_agent",
+		"pm_close_agent",
 	}
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "expected tool %q to be registered", name)

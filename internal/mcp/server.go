@@ -11,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/joescharf/pm/internal/agent"
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/health"
 	"github.com/joescharf/pm/internal/models"
@@ -50,6 +51,7 @@ func (s *Server) MCPServer() *server.MCPServer {
 	srv.AddTool(s.updateIssueTool())
 	srv.AddTool(s.healthScoreTool())
 	srv.AddTool(s.launchAgentTool())
+	srv.AddTool(s.closeAgentTool())
 
 	return srv
 }
@@ -637,6 +639,48 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal session: %v", err)), nil
 	}
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_close_agent
+func (s *Server) closeAgentTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_close_agent",
+		mcp.WithDescription("Close an agent session. Default transitions to idle. Use status=completed to mark done (issues → done) or status=abandoned to abandon (issues → open)."),
+		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID to close")),
+		mcp.WithString("status", mcp.Description("Target status: idle (default), completed, abandoned")),
+	)
+	return tool, s.handleCloseAgent
+}
+
+func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: session_id"), nil
+	}
+
+	targetStr := request.GetString("status", "idle")
+	target := models.SessionStatus(targetStr)
+
+	switch target {
+	case models.SessionStatusIdle, models.SessionStatusCompleted, models.SessionStatusAbandoned:
+	default:
+		return mcp.NewToolResultError(fmt.Sprintf("invalid status: %s (must be idle, completed, or abandoned)", targetStr)), nil
+	}
+
+	session, err := agent.CloseSession(ctx, s.store, sessionID, target)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result := map[string]any{
+		"session_id": session.ID,
+		"status":     string(session.Status),
+	}
+	if session.EndedAt != nil {
+		result["ended_at"] = session.EndedAt.Format(time.RFC3339)
+	}
+
+	data, _ := json.Marshal(result)
 	return mcp.NewToolResultText(string(data)), nil
 }
 
