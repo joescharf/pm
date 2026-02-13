@@ -26,7 +26,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "pm",
-	Short: "Program Manager - track projects, issues, and AI agents",
+	Short: "Project Manager - track projects, issues, and AI agents",
 	Long: `pm manages multiple AI-based app development projects.
 It tracks projects, issues, agent sessions, and provides a dashboard
 for managing parallel development across multiple repos.`,

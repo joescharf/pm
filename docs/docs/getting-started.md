@@ -130,6 +130,8 @@ pm serve
 
 This starts the embedded web UI at `http://localhost:8080` and the REST API at `http://localhost:8080/api/v1/`.
 
+![PM Web Dashboard](img/pm-dashboard.png)
+
 Use `--port` to change the port:
 
 ```bash

@@ -1,0 +1,114 @@
+# Dashboard
+- output: img-raw/pm-dashboard.png
+  url: http://localhost:8080
+  wait: 500
+  width: 1024
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      // Wait for status API data to load (skeleton UI disappears)
+      for (let i = 0; i < 30; i++) {
+        const skeleton = document.querySelector('[class*="skeleton"], [class*="Skeleton"], [data-slot="skeleton"]');
+        if (!skeleton) break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+      await new Promise(r => setTimeout(r, 500));
+    })();
+
+# Projects
+- output: img-raw/pm-projects.png
+  url: http://localhost:8080/projects
+  wait: 500
+  width: 1024
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      await new Promise(r => setTimeout(r, 500));
+    })();
+
+# Project Detail (PM project)
+- output: img-raw/pm-project-detail.png
+  url: http://localhost:8080/projects/01KH9RQ01VBSQT1C5JPQFAF2DQ
+  wait: 500
+  width: 1024
+  height: 900
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      await new Promise(r => setTimeout(r, 500));
+    })();
+
+# Project Health Score (PM project - scroll to health)
+- output: img-raw/pm-project-health.png
+  url: http://localhost:8080/projects/01KH9RQ01VBSQT1C5JPQFAF2DQ
+  wait: 500
+  width: 1024
+  height: 700
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      await new Promise(r => setTimeout(r, 1000));
+      // Find "Health Score" text in any element and scroll its card into view
+      const allElements = [...document.querySelectorAll('*')];
+      const healthEl = allElements.find(el =>
+        el.childNodes.length === 1 &&
+        el.childNodes[0].nodeType === 3 &&
+        el.textContent.trim() === 'Health Score'
+      );
+      if (healthEl) {
+        const card = healthEl.closest('[class*="card"], [class*="Card"]') || healthEl.parentElement?.parentElement;
+        if (card) {
+          card.scrollIntoView({ behavior: 'instant', block: 'start' });
+        } else {
+          healthEl.scrollIntoView({ behavior: 'instant', block: 'start' });
+        }
+      }
+      await new Promise(r => setTimeout(r, 300));
+    })();
+
+# Issues
+- output: img-raw/pm-issues.png
+  url: http://localhost:8080/issues
+  wait: 500
+  width: 1024
+  height: 800
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      await new Promise(r => setTimeout(r, 500));
+    })();
+
+# Issue Detail (GSI open issue, high priority)
+- output: img-raw/pm-issue-detail.png
+  url: http://localhost:8080/issues/01KHATCYWG9C9A8C9ZDD82MAN4
+  wait: 500
+  width: 1024
+  height: 800
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      await new Promise(r => setTimeout(r, 500));
+    })();
+
+# Sessions
+- output: img-raw/pm-sessions.png
+  url: http://localhost:8080/sessions
+  wait: 500
+  width: 1024
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      await new Promise(r => setTimeout(r, 500));
+    })();
+
+# Session Detail
+- output: img-raw/pm-session-detail.png
+  url: http://localhost:8080/sessions/01KHAEQ11D5QDMDCNR7VDJNSTN
+  wait: 500
+  width: 1024
+  height: 900
+  javascript: |
+    (async () => {
+      document.documentElement.classList.remove('dark');
+      await new Promise(r => setTimeout(r, 500));
+    })();

@@ -1,6 +1,6 @@
 # Tools available for AI development use:
 
-## pm - Program Manager
+## pm - Project Manager
 
 - Has a binary `pm` that can be used to manage projects, sessions, and issues.
 - Has a mcp server that can be used to manage projects, sessions, and issues via API.

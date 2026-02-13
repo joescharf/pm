@@ -1,6 +1,6 @@
 # pm
 
-**Program Manager** -- Track projects, issues, and AI agent sessions across multiple repos from the command line.
+**Project Manager** -- Track projects, issues, and AI agent sessions across multiple repos from the command line.
 
 `pm` is a developer-first CLI for managing parallel development across many repositories. It combines lightweight project tracking, issue management, agent session recording, health scoring, and a web dashboard -- all backed by a local SQLite database.
 

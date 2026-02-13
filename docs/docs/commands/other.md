@@ -148,6 +148,10 @@ Starts an HTTP server that hosts:
 
 On startup, all projects are automatically refreshed in the background to ensure the dashboard shows up-to-date metadata (language, GitHub description, Pages status, branch counts, etc.). The dashboard also includes a **Refresh All** button for on-demand refreshing.
 
+![PM Dashboard](img/pm-dashboard.png)
+
+![PM Projects](img/pm-projects.png)
+
 **Examples:**
 
 ```bash
