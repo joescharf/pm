@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Rocket, X } from "lucide-react";
 import { useIssues } from "@/hooks/use-issues";
 import { useProjects } from "@/hooks/use-projects";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { TimeAgo } from "@/components/shared/time-ago";
 import { StatusBadge, PriorityBadge } from "@/components/issues/status-badge";
 import { IssueFilters } from "@/components/issues/issue-filters";
 import { IssueForm } from "@/components/issues/issue-form";
+import { AgentLaunchDialog } from "@/components/issues/agent-launch-dialog";
 import type { Issue, IssueStatus, IssuePriority, Project } from "@/lib/types";
 
 interface FilterValues {
@@ -44,6 +45,9 @@ export function IssuesPage() {
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
     new Set()
   );
+  const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
   const { data: issuesData, isLoading: issuesLoading, error } = useIssues(filters);
   const { data: projectsData, isLoading: projectsLoading } = useProjects();
   const issues = issuesData ?? [];
@@ -86,6 +90,34 @@ export function IssuesPage() {
       return next;
     });
   };
+
+  const toggleIssueSelection = (issue: Issue) => {
+    setSelectedIssues((prev) => {
+      // If selecting from a different project, start fresh
+      if (selectedProjectId && selectedProjectId !== issue.ProjectID) {
+        setSelectedProjectId(issue.ProjectID);
+        return new Set([issue.ID]);
+      }
+      const next = new Set(prev);
+      if (next.has(issue.ID)) {
+        next.delete(issue.ID);
+        if (next.size === 0) setSelectedProjectId(null);
+      } else {
+        next.add(issue.ID);
+        setSelectedProjectId(issue.ProjectID);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIssues(new Set());
+    setSelectedProjectId(null);
+  };
+
+  useEffect(() => {
+    clearSelection();
+  }, [filters]);
 
   if (error) {
     return (
@@ -145,6 +177,9 @@ export function IssuesPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-10">
+                          <span className="sr-only">Select</span>
+                        </TableHead>
                         <TableHead>Title</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Priority</TableHead>
@@ -155,6 +190,14 @@ export function IssuesPage() {
                     <TableBody>
                       {groupIssues.map((issue) => (
                         <TableRow key={issue.ID}>
+                          <TableCell className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedIssues.has(issue.ID)}
+                              onChange={() => toggleIssueSelection(issue)}
+                              className="rounded border-gray-300"
+                            />
+                          </TableCell>
                           <TableCell>
                             <Link
                               to={`/issues/${issue.ID}`}
@@ -191,7 +234,32 @@ export function IssuesPage() {
         </div>
       )}
 
+      {selectedIssues.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-background border rounded-lg shadow-lg px-4 py-3">
+          <span className="text-sm font-medium">
+            {selectedIssues.size} issue{selectedIssues.size > 1 ? "s" : ""} selected
+          </span>
+          <Button size="sm" onClick={() => setLaunchDialogOpen(true)}>
+            <Rocket className="h-4 w-4 mr-1" />
+            Launch Agent
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clearSelection}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
       <IssueForm open={formOpen} onOpenChange={setFormOpen} />
+
+      {selectedProjectId && (
+        <AgentLaunchDialog
+          open={launchDialogOpen}
+          onOpenChange={setLaunchDialogOpen}
+          issues={issues.filter((i) => selectedIssues.has(i.ID))}
+          project={projects.find((p) => p.ID === selectedProjectId)!}
+          onSuccess={clearSelection}
+        />
+      )}
     </div>
   );
 }

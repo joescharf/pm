@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -11,22 +12,25 @@ import (
 	"github.com/joescharf/pm/internal/health"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/store"
+	"github.com/joescharf/pm/internal/wt"
 )
 
 // Server provides the REST API handlers.
 type Server struct {
-	store    store.Store
-	git      git.Client
-	gh       git.GitHubClient
-	scorer   *health.Scorer
+	store  store.Store
+	git    git.Client
+	gh     git.GitHubClient
+	wt     wt.Client
+	scorer *health.Scorer
 }
 
 // NewServer creates a new API server.
-func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient) *Server {
+func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client) *Server {
 	return &Server{
 		store:  s,
 		git:    gc,
 		gh:     ghc,
+		wt:     wtc,
 		scorer: health.NewScorer(),
 	}
 }
@@ -57,6 +61,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/tags", s.listTags)
 
 	mux.HandleFunc("GET /api/v1/health/{id}", s.projectHealth)
+
+	mux.HandleFunc("POST /api/v1/agent/launch", s.launchAgent)
 
 	return corsMiddleware(mux)
 }
@@ -435,4 +441,141 @@ func (s *Server) projectHealth(w http.ResponseWriter, r *http.Request) {
 	issues, _ := s.store.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID})
 	h := s.scorer.Score(p, meta, issues)
 	writeJSON(w, http.StatusOK, h)
+}
+
+// --- Agent Launch ---
+
+// LaunchAgentRequest is the JSON body for POST /api/v1/agent/launch.
+type LaunchAgentRequest struct {
+	IssueIDs  []string `json:"issue_ids"`
+	ProjectID string   `json:"project_id"`
+}
+
+// LaunchAgentResponse is the JSON response for a successful agent launch.
+type LaunchAgentResponse struct {
+	SessionID    string `json:"session_id"`
+	Branch       string `json:"branch"`
+	WorktreePath string `json:"worktree_path"`
+	Command      string `json:"command"`
+}
+
+func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req LaunchAgentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.ProjectID == "" {
+		writeError(w, http.StatusBadRequest, "project_id is required")
+		return
+	}
+	if len(req.IssueIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "issue_ids is required")
+		return
+	}
+
+	// Validate project exists
+	project, err := s.store.GetProject(ctx, req.ProjectID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Validate all issues exist and belong to the project
+	var issues []*models.Issue
+	for _, id := range req.IssueIDs {
+		issue, err := s.store.GetIssue(ctx, id)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				writeError(w, http.StatusNotFound, fmt.Sprintf("issue %s not found", id))
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if issue.ProjectID != req.ProjectID {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("issue %s does not belong to project %s", id, req.ProjectID))
+			return
+		}
+		issues = append(issues, issue)
+	}
+
+	// Generate branch name from first issue title
+	branch := issueToBranch(issues[0].Title)
+
+	// Worktree path: <project.Path>-<branch_with_slashes_replaced_by_hyphens>
+	worktreePath := project.Path + "-" + strings.ReplaceAll(branch, "/", "-")
+
+	// Create worktree
+	if err := s.wt.Create(project.Path, branch); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create worktree: %v", err))
+		return
+	}
+
+	// Record agent session (use first issue ID for the session record)
+	session := &models.AgentSession{
+		ProjectID:    project.ID,
+		IssueID:      req.IssueIDs[0],
+		Branch:       branch,
+		WorktreePath: worktreePath,
+		Status:       models.SessionStatusRunning,
+	}
+	if err := s.store.CreateAgentSession(ctx, session); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create session: %v", err))
+		return
+	}
+
+	// Mark all issues as in_progress
+	for _, issue := range issues {
+		issue.Status = models.IssueStatusInProgress
+		_ = s.store.UpdateIssue(ctx, issue)
+	}
+
+	// Build issue titles for the command prompt
+	var titles []string
+	for _, issue := range issues {
+		titles = append(titles, issue.Title)
+	}
+	prompt := "Work on these issues: " + strings.Join(titles, "; ")
+	command := fmt.Sprintf("cd %s && claude '%s'", worktreePath, prompt)
+
+	writeJSON(w, http.StatusOK, LaunchAgentResponse{
+		SessionID:    session.ID,
+		Branch:       branch,
+		WorktreePath: worktreePath,
+		Command:      command,
+	})
+}
+
+// issueToBranch converts an issue title to a branch name.
+func issueToBranch(title string) string {
+	s := strings.ToLower(title)
+	s = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		if r == ' ' {
+			return '-'
+		}
+		return -1
+	}, s)
+	parts := strings.Split(s, "-")
+	var clean []string
+	for _, p := range parts {
+		if p != "" {
+			clean = append(clean, p)
+		}
+	}
+	result := strings.Join(clean, "-")
+	if len(result) > 50 {
+		result = result[:50]
+	}
+	return "feature/" + result
 }

@@ -23,6 +23,9 @@ var agentCmd = &cobra.Command{
 	Use:   "agent",
 	Short: "Manage Claude Code agent sessions",
 	Long:  "Launch Claude agents via worktrees and track their sessions.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return agentListRun("")
+	},
 }
 
 var agentLaunchCmd = &cobra.Command{

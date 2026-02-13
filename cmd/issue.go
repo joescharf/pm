@@ -30,6 +30,9 @@ var issueCmd = &cobra.Command{
 	Use:   "issue",
 	Short: "Manage project issues and features",
 	Long:  "Track issues, features, and bugs for your projects.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return issueListRun("")
+	},
 }
 
 var issueAddCmd = &cobra.Command{

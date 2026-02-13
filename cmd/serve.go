@@ -6,20 +6,25 @@ import (
 	"os/exec"
 	"runtime"
 
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/joescharf/pm/internal/api"
 	"github.com/joescharf/pm/internal/git"
+	pmcp "github.com/joescharf/pm/internal/mcp"
 	embedui "github.com/joescharf/pm/internal/ui"
+	"github.com/joescharf/pm/internal/wt"
 )
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the web UI and API server",
-	Long:  "Start an HTTP server serving the REST API and embedded web UI.\nBy default it listens on port 8080. Use --port to change it.",
+	Long:  "Start an HTTP server serving the REST API, embedded web UI, and MCP server.\nBy default it listens on port 8080 (API/UI) and 8081 (MCP).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		port := viper.GetInt("port")
+		mcpEnabled := viper.GetBool("mcp")
+		mcpPort := viper.GetInt("mcp_port")
 
 		s, err := getStore()
 		if err != nil {
@@ -28,9 +33,10 @@ var serveCmd = &cobra.Command{
 
 		gc := git.NewClient()
 		ghc := git.NewGitHubClient()
+		wtc := wt.NewClient()
 
 		// Create API server
-		apiServer := api.NewServer(s, gc, ghc)
+		apiServer := api.NewServer(s, gc, ghc, wtc)
 
 		// Create UI handler
 		uiHandler, err := embedui.Handler()
@@ -47,6 +53,21 @@ var serveCmd = &cobra.Command{
 		url := fmt.Sprintf("http://localhost%s", addr)
 		ui.Info("Serving API at %s/api/v1/", url)
 		ui.Info("Serving UI at %s", url)
+
+		// Start MCP StreamableHTTP server concurrently
+		if mcpEnabled {
+			mcpSrv := pmcp.NewServer(s, gc, ghc, wtc)
+			httpMCP := server.NewStreamableHTTPServer(mcpSrv.MCPServer())
+			mcpAddr := fmt.Sprintf(":%d", mcpPort)
+			mcpURL := fmt.Sprintf("http://localhost%s/mcp", mcpAddr)
+			ui.Info("Serving MCP at %s", mcpURL)
+
+			go func() {
+				if err := httpMCP.Start(mcpAddr); err != nil {
+					ui.Warning("MCP server error: %v", err)
+				}
+			}()
+		}
 
 		// Open browser
 		openBrowser(url)
@@ -74,6 +95,14 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 
 	serveCmd.Flags().IntP("port", "p", 8080, "port to listen on")
+	serveCmd.Flags().Bool("mcp", true, "enable MCP StreamableHTTP server")
+	serveCmd.Flags().Int("mcp-port", 8081, "MCP server port")
+
 	viper.SetDefault("port", 8080)
+	viper.SetDefault("mcp", true)
+	viper.SetDefault("mcp_port", 8081)
+
 	_ = viper.BindPFlag("port", serveCmd.Flags().Lookup("port"))
+	_ = viper.BindPFlag("mcp", serveCmd.Flags().Lookup("mcp"))
+	_ = viper.BindPFlag("mcp_port", serveCmd.Flags().Lookup("mcp-port"))
 }

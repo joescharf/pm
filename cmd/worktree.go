@@ -15,6 +15,9 @@ var worktreeCmd = &cobra.Command{
 	Aliases: []string{"wt"},
 	Short:   "Manage project worktrees",
 	Long:    "List and create git worktrees for tracked projects.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return worktreeListRun("")
+	},
 }
 
 var worktreeListCmd = &cobra.Command{

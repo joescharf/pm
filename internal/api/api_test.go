@@ -15,6 +15,7 @@ import (
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/store"
+	"github.com/joescharf/pm/internal/wt"
 )
 
 func setupTestServer(t *testing.T) (*Server, store.Store) {
@@ -29,7 +30,8 @@ func setupTestServer(t *testing.T) (*Server, store.Store) {
 
 	gc := git.NewClient()
 	ghc := git.NewGitHubClient()
-	srv := NewServer(s, gc, ghc)
+	wtc := wt.NewClient()
+	srv := NewServer(s, gc, ghc, wtc)
 
 	return srv, s
 }

@@ -81,3 +81,15 @@ export interface StatusEntry {
   versionSource?: string;
   releaseAssets?: ReleaseAsset[];
 }
+
+export interface LaunchAgentRequest {
+  issue_ids: string[];
+  project_id: string;
+}
+
+export interface LaunchAgentResponse {
+  session_id: string;
+  branch: string;
+  worktree_path: string;
+  command: string;
+}

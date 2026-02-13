@@ -26,6 +26,9 @@ var projectCmd = &cobra.Command{
 	Use:   "project",
 	Short: "Manage tracked projects",
 	Long:  "Add, remove, list, and show tracked development projects.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return projectListRun()
+	},
 }
 
 var projectAddCmd = &cobra.Command{

@@ -14,6 +14,9 @@ var tagCmd = &cobra.Command{
 	Use:   "tag",
 	Short: "Manage issue tags",
 	Long:  "Create, list, and delete tags for organizing issues.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return tagListRun()
+	},
 }
 
 var tagListCmd = &cobra.Command{
