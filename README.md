@@ -22,8 +22,10 @@ When you're developing across many repos with AI coding agents, you need a way t
 - **Health scoring** -- 0-100 composite score across 5 dimensions (git cleanliness, activity, issues, releases, branches)
 - **Standards checking** -- Verify projects follow conventions (Makefile, CLAUDE.md, tests, etc.)
 - **Web dashboard** -- Embedded React UI served alongside a REST API
+- **Issue import** -- Bulk-import issues from markdown files with LLM-powered extraction
 - **Data export** -- JSON, CSV, and Markdown export for projects, issues, and sessions
-- **MCP integration** -- (Coming soon) Model Context Protocol server for Claude Code
+- **MCP server** -- Model Context Protocol server for Claude Code integration
+- **Auto-detect project** -- Running `pm` in a project directory shows its status automatically
 
 ## Quick Start
 
@@ -42,6 +44,9 @@ pm project scan ~/code
 
 # Create an issue
 pm issue add --title "Add user authentication"
+
+# Import a backlog of issues from markdown
+pm issue import backlog.md --dry-run
 
 # Check status across all projects
 pm status
@@ -84,6 +89,8 @@ Key settings:
 | `github.default_org` | `""` | `PM_GITHUB_DEFAULT_ORG` | Default GitHub org |
 | `agent.model` | `"opus"` | `PM_AGENT_MODEL` | Claude model for agents |
 | `agent.auto_launch` | `false` | `PM_AGENT_AUTO_LAUNCH` | Auto-launch agents on worktree create |
+| `anthropic.api_key` | `""` | `ANTHROPIC_API_KEY` | API key for LLM features (issue import) |
+| `anthropic.model` | `"claude-haiku-4-5-20251001"` | `PM_ANTHROPIC_MODEL` | Model for LLM extraction |
 
 Precedence: flags > environment variables > config file > defaults.
 
@@ -92,8 +99,8 @@ See the [full configuration docs](docs/docs/configuration.md) for details.
 ## Commands
 
 ```
-pm project add|remove|list|show|scan   Manage tracked projects
-pm issue add|list|show|update|close|link   Manage issues and features
+pm project add|remove|list|show|scan|refresh   Manage tracked projects
+pm issue add|list|show|update|close|link|import   Manage issues and features
 pm status [project]                    Cross-project status dashboard
 pm agent launch|list|history           Manage AI agent sessions
 pm worktree list|create                Manage git worktrees (alias: wt)
@@ -103,11 +110,22 @@ pm export                              Export data (JSON/CSV/Markdown)
 pm report weekly                       Generate weekly summary
 pm serve                               Start web UI + REST API
 pm config init|show|edit               Manage configuration
-pm mcp                                 MCP server (coming soon)
+pm mcp                                 Start MCP stdio server
 pm version                             Print version info
 ```
 
 Global flags: `--verbose (-v)`, `--dry-run (-n)`, `--config <path>`
+
+## Web Dashboard
+
+`pm serve` starts an embedded web UI at `http://localhost:8080` with:
+
+- **Dashboard** -- Overview of all projects with health scores, open issue counts, and quick links
+- **Projects** -- Detailed project view with git metadata, issues, and health breakdown
+- **Issues** -- All issues grouped by project with status/priority/tag filters
+- **REST API** -- Full CRUD API at `/api/v1/` for programmatic access
+
+The UI is a React/TypeScript SPA built with Vite, TanStack Query, and shadcn/ui, embedded directly into the Go binary.
 
 ## Documentation
 
