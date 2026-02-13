@@ -104,14 +104,14 @@ func TestConfigEdit_NoEditor(t *testing.T) {
 	// Unset EDITOR and VISUAL
 	origEditor := os.Getenv("EDITOR")
 	origVisual := os.Getenv("VISUAL")
-	os.Unsetenv("EDITOR")
-	os.Unsetenv("VISUAL")
+	_ = os.Unsetenv("EDITOR")
+	_ = os.Unsetenv("VISUAL")
 	t.Cleanup(func() {
 		if origEditor != "" {
-			os.Setenv("EDITOR", origEditor)
+			_ = os.Setenv("EDITOR", origEditor)
 		}
 		if origVisual != "" {
-			os.Setenv("VISUAL", origVisual)
+			_ = os.Setenv("VISUAL", origVisual)
 		}
 	})
 
@@ -123,8 +123,8 @@ func TestConfigEdit_NoEditor(t *testing.T) {
 func TestConfigEdit_NoConfigFile(t *testing.T) {
 	testEnv(t)
 
-	os.Setenv("EDITOR", "echo") // harmless command
-	t.Cleanup(func() { os.Unsetenv("EDITOR") })
+	_ = os.Setenv("EDITOR", "echo") // harmless command
+	t.Cleanup(func() { _ = os.Unsetenv("EDITOR") })
 
 	err := configEditRun()
 	assert.Error(t, err)

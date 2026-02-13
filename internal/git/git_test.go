@@ -5,7 +5,21 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// initTestRepo creates a git repo in dir with a user config so commits work on CI.
+func initTestRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmds := [][]string{
+		{"git", "-C", dir, "init"},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+	}
+	for _, args := range cmds {
+		require.NoError(t, exec.Command(args[0], args[1:]...).Run())
+	}
+}
 
 func TestParseWorktreeListPorcelain(t *testing.T) {
 	input := `worktree /Users/joe/projects/myrepo
@@ -61,8 +75,8 @@ func TestExtractOwnerRepo_Invalid(t *testing.T) {
 
 func TestLatestTag_NoTags(t *testing.T) {
 	dir := t.TempDir()
-	_ = exec.Command("git", "-C", dir, "init").Run()
-	_ = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run()
+	initTestRepo(t, dir)
+	require.NoError(t, exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run())
 
 	c := NewClient()
 	_, err := c.LatestTag(dir)
@@ -71,9 +85,9 @@ func TestLatestTag_NoTags(t *testing.T) {
 
 func TestLatestTag_WithTag(t *testing.T) {
 	dir := t.TempDir()
-	_ = exec.Command("git", "-C", dir, "init").Run()
-	_ = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run()
-	_ = exec.Command("git", "-C", dir, "tag", "v1.0.0").Run()
+	initTestRepo(t, dir)
+	require.NoError(t, exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "init").Run())
+	require.NoError(t, exec.Command("git", "-C", dir, "tag", "v1.0.0").Run())
 
 	c := NewClient()
 	tag, err := c.LatestTag(dir)
@@ -83,11 +97,11 @@ func TestLatestTag_WithTag(t *testing.T) {
 
 func TestLatestTag_MultipleTagsReturnsLatest(t *testing.T) {
 	dir := t.TempDir()
-	_ = exec.Command("git", "-C", dir, "init").Run()
-	_ = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "first").Run()
-	_ = exec.Command("git", "-C", dir, "tag", "v1.0.0").Run()
-	_ = exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "second").Run()
-	_ = exec.Command("git", "-C", dir, "tag", "v2.0.0").Run()
+	initTestRepo(t, dir)
+	require.NoError(t, exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "first").Run())
+	require.NoError(t, exec.Command("git", "-C", dir, "tag", "v1.0.0").Run())
+	require.NoError(t, exec.Command("git", "-C", dir, "commit", "--allow-empty", "-m", "second").Run())
+	require.NoError(t, exec.Command("git", "-C", dir, "tag", "v2.0.0").Run())
 
 	c := NewClient()
 	tag, err := c.LatestTag(dir)

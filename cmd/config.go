@@ -144,8 +144,8 @@ func configInitRun() error {
 
 	if dryRun {
 		ui.DryRunMsg("Would create config file: %s", cfgPath)
-		fmt.Fprintln(ui.Out)
-		fmt.Fprint(ui.Out, buf.String())
+		_, _ = fmt.Fprintln(ui.Out)
+		_, _ = fmt.Fprint(ui.Out, buf.String())
 		return nil
 	}
 
@@ -160,8 +160,8 @@ func configInitRun() error {
 	}
 
 	ui.Success("Config file created: %s", cfgPath)
-	fmt.Fprintln(ui.Out)
-	fmt.Fprint(ui.Out, buf.String())
+	_, _ = fmt.Fprintln(ui.Out)
+	_, _ = fmt.Fprint(ui.Out, buf.String())
 	return nil
 }
 
@@ -191,7 +191,7 @@ func configShowRun() error {
 	} else {
 		ui.Info("Config file: (none)")
 	}
-	fmt.Fprintln(ui.Out)
+	_, _ = fmt.Fprintln(ui.Out)
 
 	// Read config file values to determine file source
 	fileValues := readConfigFileValues(cfgPath)
