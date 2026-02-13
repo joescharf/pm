@@ -133,33 +133,63 @@ Start the web UI and REST API server.
 
 ```bash
 pm serve [flags]
+pm serve start     Start server in the background
+pm serve stop      Stop background server
+pm serve restart   Restart background server
+pm serve status    Show background server status
 ```
 
-**Flags:**
+**Flags (shared by all subcommands):**
 
 | Flag | Short | Type | Default | Description |
 |------|-------|------|---------|-------------|
 | `--port` | `-p` | int | `8080` | Port to listen on |
+| `--mcp` | | bool | `true` | Enable MCP StreamableHTTP server |
+| `--mcp-port` | | int | `8081` | MCP server port |
+| `--daemon` | `-d` | bool | `false` | Run server in the background |
 
 Starts an HTTP server that hosts:
 
 - **Web UI** at `http://localhost:<port>/` -- an embedded React dashboard
 - **REST API** at `http://localhost:<port>/api/v1/` -- see [REST API reference](../api.md)
+- **MCP server** at `http://localhost:<mcp-port>/mcp` (when `--mcp` is enabled)
 
 On startup, all projects are automatically refreshed in the background to ensure the dashboard shows up-to-date metadata (language, GitHub description, Pages status, branch counts, etc.). The dashboard also includes a **Refresh All** button for on-demand refreshing.
+
+The server handles graceful shutdown on SIGINT/SIGTERM with a 10-second timeout.
 
 ![PM Dashboard](img/pm-dashboard.png)
 
 ![PM Projects](img/pm-projects.png)
 
+### Background management
+
+Use subcommands to manage the server as a background process:
+
+- **`pm serve start`** -- Spawns the server as a detached background process. Writes output to `~/.config/pm/pm-serve.log`.
+- **`pm serve stop`** -- Sends SIGTERM to the background server, waits up to 10 seconds for graceful shutdown, then force-kills if needed.
+- **`pm serve restart`** -- Stops and starts the server.
+- **`pm serve status`** -- Shows whether the server is running, along with PID, URL, and log file path.
+- **`pm serve --daemon`** -- Equivalent to `pm serve start`.
+
+PID file: `~/.config/pm/pm-serve.pid` | Log file: `~/.config/pm/pm-serve.log`
+
 **Examples:**
 
 ```bash
-# Default port 8080
+# Foreground (opens browser)
 pm serve
 
-# Custom port
+# Foreground on custom port
 pm serve --port 3000
+
+# Background
+pm serve start
+pm serve status
+pm serve stop
+
+# Shorthand for background
+pm serve --daemon
 ```
 
 ---

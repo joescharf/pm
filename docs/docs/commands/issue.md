@@ -9,6 +9,7 @@ pm issue show <issue-id>        Show issue details
 pm issue update <issue-id>      Update an issue
 pm issue close <issue-id>       Close an issue
 pm issue link <issue-id>        Link to a GitHub issue
+pm issue import <file>          Import issues from markdown
 ```
 
 ## Data Model
@@ -193,3 +194,54 @@ pm issue link 01J5ABCD1234 --github 42
 ```
 
 After linking, the GitHub issue number appears in issue list and show output as `GH#42`.
+
+## issue import
+
+Bulk-import issues from a markdown file.
+
+```bash
+pm issue import <file> [flags]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--project` | string | `""` | Assign all issues to this project (skips LLM) |
+| `--dry-run` | bool | `false` | Preview extracted issues without creating them |
+
+There are two import modes:
+
+### With `--project` (simple parser)
+
+Parses numbered (`1.`) and bulleted (`-`, `*`) list items from the markdown file. Issues can optionally be grouped under `## Project <name>` headings.
+
+Type and priority are **automatically classified from the title** using keyword heuristics:
+
+| Classification | Keywords |
+|----------------|----------|
+| **Bug** | fix, bug, broken, crash, error, regression, fail, fault, defect, "issue with", "not working" |
+| **Chore** | refactor, cleanup, "clean up", "update dep", migrate, upgrade, rename, reorganize, chore, lint |
+| **Feature** | (default -- no keywords matched) |
+| **High priority** | critical, urgent, blocker, crash, security, "data loss", "production down", p0, p1 |
+| **Low priority** | minor, "nice to have", cosmetic, trivial, "low priority", cleanup, "clean up" |
+| **Medium priority** | (default -- no keywords matched) |
+
+Bug keywords are checked before chore keywords, so "Fix the migration script" is classified as a bug.
+
+### Without `--project` (LLM extraction)
+
+Uses Claude (requires `ANTHROPIC_API_KEY` or `anthropic.api_key` in config) to extract structured issues with project assignment, type, and priority inferred by the model.
+
+**Examples:**
+
+```bash
+# Preview with simple parser
+pm issue import backlog.md --project my-api --dry-run
+
+# Import with LLM extraction
+pm issue import backlog.md
+
+# Import from stdin
+echo "1. Fix login crash\n2. Add dark mode" | pm issue import --project myapp /dev/stdin
+```

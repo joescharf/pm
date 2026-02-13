@@ -204,8 +204,8 @@ func parseMarkdownIssues(content string) []llm.ExtractedIssue {
 			issues = append(issues, llm.ExtractedIssue{
 				Project:  currentProject,
 				Title:    title,
-				Type:     "feature",
-				Priority: "medium",
+				Type:     classifyIssueType(title),
+				Priority: classifyIssuePriority(title),
 			})
 		}
 	}

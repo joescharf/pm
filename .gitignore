@@ -43,3 +43,6 @@ internal/ui/dist/assets/
 docs/.venv/
 docs/site/
 pm
+
+# Screenshots (intermediate output, copied to docs repo)
+scripts/img/

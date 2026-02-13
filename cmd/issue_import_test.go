@@ -40,6 +40,36 @@ func TestParseMarkdownIssues(t *testing.T) {
 
 		assert.Equal(t, "gsi", issues[4].Project)
 		assert.Equal(t, "Fix login bug", issues[4].Title)
+		assert.Equal(t, "bug", issues[4].Type)
+		assert.Equal(t, "medium", issues[4].Priority)
+	})
+
+	t.Run("classification through parser", func(t *testing.T) {
+		md := `## Project test
+
+1. Fix critical crash on startup
+2. Refactor database layer
+3. Add dark mode support
+4. Minor cosmetic button fix
+`
+		issues := parseMarkdownIssues(md)
+		require.Len(t, issues, 4)
+
+		// bug + high priority (crash + critical)
+		assert.Equal(t, "bug", issues[0].Type)
+		assert.Equal(t, "high", issues[0].Priority)
+
+		// chore + medium priority
+		assert.Equal(t, "chore", issues[1].Type)
+		assert.Equal(t, "medium", issues[1].Priority)
+
+		// feature + medium priority
+		assert.Equal(t, "feature", issues[2].Type)
+		assert.Equal(t, "medium", issues[2].Priority)
+
+		// bug (fix) + low priority (minor + cosmetic)
+		assert.Equal(t, "bug", issues[3].Type)
+		assert.Equal(t, "low", issues[3].Priority)
 	})
 
 	t.Run("bulleted list", func(t *testing.T) {

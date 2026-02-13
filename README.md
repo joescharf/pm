@@ -23,7 +23,7 @@ When you're developing across many repos with AI coding agents, you need a way t
 - **GitHub metadata** -- Auto-detect branch count, GitHub Pages status, and repo description on project refresh
 - **Standards checking** -- Verify projects follow conventions (Makefile, CLAUDE.md, tests, etc.)
 - **Web dashboard** -- Embedded React UI served alongside a REST API
-- **Issue import** -- Bulk-import issues from markdown files with LLM-powered extraction
+- **Issue import** -- Bulk-import issues from markdown files with LLM-powered or keyword-based type/priority classification
 - **Data export** -- JSON, CSV, and Markdown export for projects, issues, and sessions
 - **MCP server** -- Model Context Protocol server for Claude Code integration
 - **Auto-detect project** -- Running `pm` in a project directory shows its status automatically
@@ -121,7 +121,7 @@ pm tag list|create|delete              Manage issue tags
 pm standards [project]                 Check project standardization
 pm export                              Export data (JSON/CSV/Markdown)
 pm report weekly                       Generate weekly summary
-pm serve                               Start web UI + REST API
+pm serve [start|stop|restart|status]   Start web UI + REST API (foreground or background)
 pm config init|show|edit               Manage configuration
 pm mcp                                 Start MCP stdio server
 pm version                             Print version info
@@ -131,7 +131,7 @@ Global flags: `--verbose (-v)`, `--dry-run (-n)`, `--config <path>`
 
 ## Web Dashboard
 
-`pm serve` starts an embedded web UI at `http://localhost:8080` with:
+`pm serve` starts an embedded web UI at `http://localhost:8080` (use `pm serve start` to run in the background) with:
 
 - **Dashboard** -- Overview of all projects with health scores, open issue counts, quick links, and a Refresh All button to update project metadata on demand
 - **Projects** -- Detailed project view with git metadata, issues, and health breakdown

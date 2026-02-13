@@ -25,7 +25,7 @@ pm issue show <id>              # Show issue details (accepts short IDs)
 pm issue update <id>            # --status, --title, --desc, --priority
 pm issue close <id>             # Close an issue
 pm issue link <id>              # --github <number>
-pm issue import <file>          # Import issues from markdown (--project, --dry-run)
+pm issue import <file>          # Import issues from markdown (--project, --dry-run); auto-classifies type/priority
 
 pm agent list [project]         # Active/idle sessions (default subcommand)
 pm agent launch <project>       # --issue, --branch (resumes idle sessions)
@@ -41,7 +41,11 @@ pm worktree create <proj> <br>  # Create worktree
 
 pm status [project]             # Dashboard overview
 pm standards [project]          # Project standards
-pm serve                        # Start web UI + API (--port, --mcp, --mcp-port)
+pm serve                        # Start web UI + API (--port, --mcp, --mcp-port, --daemon/-d)
+pm serve start                  # Start server in the background
+pm serve stop                   # Stop background server
+pm serve restart                # Restart background server
+pm serve status                 # Show background server status
 pm export                       # Export data (--format json|csv|md)
 pm report weekly                # Weekly report
 
