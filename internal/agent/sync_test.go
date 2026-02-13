@@ -63,6 +63,39 @@ func TestReconcileSessions_ExistingWorktree_IdleStaysIdle(t *testing.T) {
 	assert.Equal(t, models.SessionStatusIdle, ms.sessions["sess-1"].Status)
 }
 
+func TestReconcileSessions_AbandonedWithWorktree_RecoversToIdle(t *testing.T) {
+	session := &models.AgentSession{
+		ID:           "sess-1",
+		WorktreePath: t.TempDir(),
+		Status:       models.SessionStatusAbandoned,
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{},
+	}
+
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
+	assert.Equal(t, 1, cleaned)
+	assert.Equal(t, models.SessionStatusIdle, ms.sessions["sess-1"].Status)
+	assert.NotNil(t, ms.sessions["sess-1"].LastActiveAt)
+}
+
+func TestReconcileSessions_AbandonedWithMissingWorktree_StaysAbandoned(t *testing.T) {
+	session := &models.AgentSession{
+		ID:           "sess-1",
+		WorktreePath: "/nonexistent/path",
+		Status:       models.SessionStatusAbandoned,
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{},
+	}
+
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
+	assert.Equal(t, 0, cleaned)
+	assert.Equal(t, models.SessionStatusAbandoned, ms.sessions["sess-1"].Status)
+}
+
 func TestReconcileSessions_SkipsTerminal(t *testing.T) {
 	session := &models.AgentSession{
 		ID:           "sess-1",

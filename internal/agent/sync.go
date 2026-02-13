@@ -8,29 +8,42 @@ import (
 	"github.com/joescharf/pm/internal/models"
 )
 
-// ReconcileSessions checks active/idle sessions and:
-// 1. Marks sessions with missing worktree directories as abandoned.
+// ReconcileSessions checks sessions and:
+// 1. Marks active/idle sessions with missing worktree directories as abandoned.
 // 2. Transitions active sessions (whose worktree exists) to idle, since
 //    if pm is running reconciliation the Claude process has stopped.
-// Returns the count of sessions cleaned up.
+// 3. Recovers abandoned sessions whose worktree still exists back to idle.
+// Returns the count of sessions updated.
 func ReconcileSessions(ctx context.Context, s SessionStore, sessions []*models.AgentSession) int {
 	cleaned := 0
 	for _, sess := range sessions {
-		if sess.Status != models.SessionStatusActive && sess.Status != models.SessionStatusIdle {
+		if sess.Status == models.SessionStatusCompleted {
 			continue
 		}
 		if sess.WorktreePath == "" {
 			continue
 		}
+		wtExists := true
 		if _, err := os.Stat(sess.WorktreePath); err != nil {
+			wtExists = false
+		}
+
+		switch {
+		case !wtExists && (sess.Status == models.SessionStatusActive || sess.Status == models.SessionStatusIdle):
 			// Worktree is gone — abandon the session
 			if _, err := CloseSession(ctx, s, sess.ID, models.SessionStatusAbandoned); err == nil {
 				cleaned++
 			}
-			continue
-		}
-		// Worktree exists but session is active — transition to idle
-		if sess.Status == models.SessionStatusActive {
+		case wtExists && sess.Status == models.SessionStatusActive:
+			// Active but no Claude process — transition to idle
+			now := time.Now().UTC()
+			sess.LastActiveAt = &now
+			sess.Status = models.SessionStatusIdle
+			if err := s.UpdateAgentSession(ctx, sess); err == nil {
+				cleaned++
+			}
+		case wtExists && sess.Status == models.SessionStatusAbandoned:
+			// Worktree recovered/still exists — transition back to idle
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now
 			sess.Status = models.SessionStatusIdle
