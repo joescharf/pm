@@ -218,22 +218,22 @@ func agentListRun(projectRef string) error {
 	// Reconcile orphaned worktrees
 	agent.ReconcileSessions(ctx, s, sessions)
 
-	// Filter to running only
-	var active []*models.AgentSession
+	// Filter to active/idle
+	var live []*models.AgentSession
 	for _, sess := range sessions {
-		if sess.Status == models.SessionStatusActive {
-			active = append(active, sess)
+		if sess.Status == models.SessionStatusActive || sess.Status == models.SessionStatusIdle {
+			live = append(live, sess)
 		}
 	}
 
-	if len(active) == 0 {
-		ui.Info("No active agent sessions.")
+	if len(live) == 0 {
+		ui.Info("No active or idle agent sessions.")
 		return nil
 	}
 
 	projectNames := make(map[string]string)
-	table := ui.Table([]string{"ID", "Project", "Branch", "Started"})
-	for _, sess := range active {
+	table := ui.Table([]string{"ID", "Project", "Branch", "Status", "Worktree", "Started"})
+	for _, sess := range live {
 		projName := projectNames[sess.ProjectID]
 		if projName == "" {
 			if p, err := s.GetProject(ctx, sess.ProjectID); err == nil {
@@ -246,6 +246,8 @@ func agentListRun(projectRef string) error {
 			shortID(sess.ID),
 			projName,
 			sess.Branch,
+			output.StatusColor(string(sess.Status)),
+			sess.WorktreePath,
 			timeAgo(sess.StartedAt),
 		})
 	}
