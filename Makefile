@@ -61,10 +61,7 @@ mocks: ## Generate mocks with mockery
 .PHONY: release release-local release-snapshot
 
 release: ## Create a release with goreleaser
-	goreleaser release --clean
-
-release-local: ## Create a signed local release (macOS code-signing)
-	goreleaser release --clean
+	HOMEBREW_TAP_TOKEN=$$(cat ~/.config/goreleaser/homebrew_tap_token) goreleaser release --clean
 
 release-snapshot: ## Create a snapshot release (no publish)
 	goreleaser release --snapshot --clean --skip docker,homebrew
