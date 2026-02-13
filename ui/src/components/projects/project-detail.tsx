@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useProject, useDeleteProject } from "@/hooks/use-projects";
 import { useProjectIssues } from "@/hooks/use-issues";
 import { useSessions } from "@/hooks/use-sessions";
+import { useCloseAgent } from "@/hooks/use-agent";
 import { useProjectHealth } from "@/hooks/use-status";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,9 +27,26 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TimeAgo } from "@/components/shared/time-ago";
 import { EmptyState } from "@/components/shared/empty-state";
+import { cn } from "@/lib/utils";
 import { HealthChart } from "./health-chart";
 import { ProjectForm } from "./project-form";
 import { IssueForm } from "@/components/issues/issue-form";
+import type { SessionStatus } from "@/lib/types";
+
+function sessionColor(status: SessionStatus): string {
+  switch (status) {
+    case "active":
+      return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300";
+    case "idle":
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300";
+    case "completed":
+      return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
+    case "abandoned":
+      return "bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300";
+    default:
+      return "";
+  }
+}
 
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -41,9 +59,23 @@ export function ProjectDetail() {
   const { data: issuesData } = useProjectIssues(id!);
   const { data: sessionsData } = useSessions(id!);
   const deleteProject = useDeleteProject();
+  const closeAgent = useCloseAgent();
 
   const issues = issuesData ?? [];
   const sessions = sessionsData ?? [];
+  const worktrees = sessions.filter(
+    (s) => s.Status === "active" || s.Status === "idle"
+  );
+
+  const handleClose = (sessionId: string, status: "idle" | "completed" | "abandoned") => {
+    closeAgent.mutate(
+      { session_id: sessionId, status },
+      {
+        onSuccess: () => toast.success(`Session ${status}`),
+        onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+      }
+    );
+  };
 
   function handleDelete() {
     if (
@@ -172,12 +204,15 @@ export function ProjectDetail() {
         </CardContent>
       </Card>
 
-      {/* Issues & Sessions Tabs */}
+      {/* Issues, Worktrees & Sessions Tabs */}
       <Tabs defaultValue="issues">
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="issues">
               Issues{issues.length > 0 && ` (${issues.length})`}
+            </TabsTrigger>
+            <TabsTrigger value="worktrees">
+              Worktrees{worktrees.length > 0 && ` (${worktrees.length})`}
             </TabsTrigger>
             <TabsTrigger value="sessions">
               Sessions{sessions.length > 0 && ` (${sessions.length})`}
@@ -235,6 +270,92 @@ export function ProjectDetail() {
           )}
         </TabsContent>
 
+        <TabsContent value="worktrees">
+          {worktrees.length === 0 ? (
+            <EmptyState message="No active worktrees for this project" />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>Issue</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Started</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {worktrees.map((wt) => (
+                  <TableRow key={wt.ID}>
+                    <TableCell className="font-mono text-xs">
+                      {wt.Branch || "—"}
+                    </TableCell>
+                    <TableCell>
+                      {wt.IssueID ? (
+                        <Link
+                          to={`/issues/${wt.IssueID}`}
+                          className="font-mono text-xs hover:underline"
+                        >
+                          {wt.IssueID.slice(0, 12)}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={cn(sessionColor(wt.Status), "text-xs")}
+                      >
+                        {wt.Status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <TimeAgo
+                        date={wt.StartedAt}
+                        className="text-xs text-muted-foreground"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {wt.Status === "active" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleClose(wt.ID, "idle")}
+                            disabled={closeAgent.isPending}
+                          >
+                            Pause
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => handleClose(wt.ID, "completed")}
+                          disabled={closeAgent.isPending}
+                        >
+                          Done
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs text-destructive"
+                          onClick={() => handleClose(wt.ID, "abandoned")}
+                          disabled={closeAgent.isPending}
+                        >
+                          Abandon
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </TabsContent>
+
         <TabsContent value="sessions">
           {sessions.length === 0 ? (
             <EmptyState message="No agent sessions for this project" />
@@ -255,7 +376,10 @@ export function ProjectDetail() {
                       {session.Branch || "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="outline"
+                        className={cn(sessionColor(session.Status), "text-xs")}
+                      >
                         {session.Status}
                       </Badge>
                     </TableCell>

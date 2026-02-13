@@ -1,4 +1,5 @@
 import { useSessions } from "@/hooks/use-sessions";
+import { useCloseAgent } from "@/hooks/use-agent";
 import {
   Table,
   TableBody,
@@ -8,20 +9,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TimeAgo } from "@/components/shared/time-ago";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { SessionStatus } from "@/lib/types";
 
 function sessionColor(status: SessionStatus): string {
   switch (status) {
-    case "running":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300";
+    case "active":
+      return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300";
+    case "idle":
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300";
     case "completed":
       return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
-    case "failed":
-      return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
     case "abandoned":
       return "bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300";
     default:
@@ -30,7 +33,7 @@ function sessionColor(status: SessionStatus): string {
 }
 
 function formatDuration(start: string, end: string | null): string {
-  if (!end) return "running";
+  if (!end) return "active";
   const ms = new Date(end).getTime() - new Date(start).getTime();
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return `${sec}s`;
@@ -43,6 +46,17 @@ function formatDuration(start: string, end: string | null): string {
 export function SessionsPage() {
   const { data, isLoading, error } = useSessions();
   const sessions = data ?? [];
+  const closeAgent = useCloseAgent();
+
+  const handleClose = (sessionId: string, status: "idle" | "completed" | "abandoned") => {
+    closeAgent.mutate(
+      { session_id: sessionId, status },
+      {
+        onSuccess: () => toast.success(`Session ${status}`),
+        onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+      }
+    );
+  };
 
   if (error) {
     return (
@@ -74,6 +88,7 @@ export function SessionsPage() {
               <TableHead className="text-center">Commits</TableHead>
               <TableHead>Duration</TableHead>
               <TableHead>Started</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -102,6 +117,41 @@ export function SessionsPage() {
                     date={s.StartedAt}
                     className="text-xs text-muted-foreground"
                   />
+                </TableCell>
+                <TableCell>
+                  {(s.Status === "active" || s.Status === "idle") && (
+                    <div className="flex items-center gap-1">
+                      {s.Status === "active" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => handleClose(s.ID, "idle")}
+                          disabled={closeAgent.isPending}
+                        >
+                          Pause
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => handleClose(s.ID, "completed")}
+                        disabled={closeAgent.isPending}
+                      >
+                        Done
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs text-destructive"
+                        onClick={() => handleClose(s.ID, "abandoned")}
+                        disabled={closeAgent.isPending}
+                      >
+                        Abandon
+                      </Button>
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

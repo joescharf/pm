@@ -31,7 +31,7 @@ export interface Issue {
   ClosedAt: string | null;
 }
 
-export type SessionStatus = "running" | "completed" | "failed" | "abandoned";
+export type SessionStatus = "active" | "idle" | "completed" | "abandoned";
 
 export interface AgentSession {
   ID: string;
@@ -92,4 +92,15 @@ export interface LaunchAgentResponse {
   branch: string;
   worktree_path: string;
   command: string;
+}
+
+export interface CloseAgentRequest {
+  session_id: string;
+  status?: "idle" | "completed" | "abandoned";
+}
+
+export interface CloseAgentResponse {
+  session_id: string;
+  status: string;
+  ended_at?: string;
 }

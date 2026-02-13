@@ -27,3 +27,29 @@ export function useLaunchAgent() {
     },
   });
 }
+
+interface CloseAgentRequest {
+  session_id: string;
+  status?: "idle" | "completed" | "abandoned";
+}
+
+interface CloseAgentResponse {
+  session_id: string;
+  status: string;
+  ended_at?: string;
+}
+
+export function useCloseAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CloseAgentRequest) =>
+      apiFetch<CloseAgentResponse>("/api/v1/agent/close", {
+        method: "POST",
+        body: JSON.stringify(req),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["issues"] });
+    },
+  });
+}
