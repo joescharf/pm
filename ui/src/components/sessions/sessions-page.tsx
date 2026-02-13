@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { useSessions } from "@/hooks/use-sessions";
-import { useCloseAgent } from "@/hooks/use-agent";
+import { useCloseAgent, useResumeAgent } from "@/hooks/use-agent";
 import {
   Table,
   TableBody,
@@ -49,12 +49,31 @@ export function SessionsPage() {
   const { data, isLoading, error } = useSessions();
   const sessions = data ?? [];
   const closeAgent = useCloseAgent();
+  const resumeAgent = useResumeAgent();
 
   const handleClose = (sessionId: string, status: "idle" | "completed" | "abandoned") => {
     closeAgent.mutate(
       { session_id: sessionId, status },
       {
         onSuccess: () => toast.success(`Session ${status}`),
+        onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+      }
+    );
+  };
+
+  const handleResume = (sessionId: string) => {
+    resumeAgent.mutate(
+      { session_id: sessionId },
+      {
+        onSuccess: (data) => {
+          toast.success("Session resumed");
+          if (data.command) {
+            navigator.clipboard.writeText(data.command).then(
+              () => toast.info("Command copied to clipboard"),
+              () => {}
+            );
+          }
+        },
         onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
       }
     );
@@ -134,6 +153,17 @@ export function SessionsPage() {
                       className="flex items-center gap-1"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {s.Status === "idle" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => handleResume(s.ID)}
+                          disabled={resumeAgent.isPending}
+                        >
+                          Resume
+                        </Button>
+                      )}
                       {s.Status === "active" && (
                         <Button
                           variant="outline"

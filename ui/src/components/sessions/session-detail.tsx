@@ -1,6 +1,6 @@
 import { useParams, Link } from "react-router";
 import { useSession } from "@/hooks/use-sessions";
-import { useCloseAgent } from "@/hooks/use-agent";
+import { useCloseAgent, useResumeAgent } from "@/hooks/use-agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,12 +34,31 @@ export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: session, isLoading, error } = useSession(id!);
   const closeAgent = useCloseAgent();
+  const resumeAgent = useResumeAgent();
 
   const handleClose = (status: "idle" | "completed" | "abandoned") => {
     closeAgent.mutate(
       { session_id: id!, status },
       {
         onSuccess: () => toast.success(`Session ${status}`),
+        onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+      }
+    );
+  };
+
+  const handleResume = () => {
+    resumeAgent.mutate(
+      { session_id: id! },
+      {
+        onSuccess: (data) => {
+          toast.success("Session resumed");
+          if (data.command) {
+            navigator.clipboard.writeText(data.command).then(
+              () => toast.info("Command copied to clipboard"),
+              () => {}
+            );
+          }
+        },
         onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
       }
     );
@@ -97,6 +116,14 @@ export function SessionDetail() {
         </div>
         {isLive && (
           <div className="flex items-center gap-2">
+            {session.Status === "idle" && (
+              <Button
+                onClick={handleResume}
+                disabled={resumeAgent.isPending}
+              >
+                Resume
+              </Button>
+            )}
             {session.Status === "active" && (
               <Button
                 variant="outline"

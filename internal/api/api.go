@@ -66,6 +66,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/health/{id}", s.projectHealth)
 
 	mux.HandleFunc("POST /api/v1/agent/launch", s.launchAgent)
+	mux.HandleFunc("POST /api/v1/agent/resume", s.resumeAgent)
 	mux.HandleFunc("POST /api/v1/agent/close", s.closeAgent)
 
 	return corsMiddleware(mux)
@@ -663,6 +664,56 @@ func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
 		SessionID:    session.ID,
 		Branch:       branch,
 		WorktreePath: worktreePath,
+		Command:      command,
+	})
+}
+
+func (s *Server) resumeAgent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.SessionID == "" {
+		writeError(w, http.StatusBadRequest, "session_id is required")
+		return
+	}
+
+	sess, err := s.store.GetAgentSession(ctx, req.SessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if sess.Status != models.SessionStatusIdle {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("session is %s, not idle", sess.Status))
+		return
+	}
+
+	sess.Status = models.SessionStatusActive
+	now := time.Now().UTC()
+	sess.LastActiveAt = &now
+	if err := s.store.UpdateAgentSession(ctx, sess); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	command := fmt.Sprintf("cd %s && claude", sess.WorktreePath)
+	if sess.IssueID != "" {
+		shortID := sess.IssueID
+		if len(shortID) > 12 {
+			shortID = shortID[:12]
+		}
+		command = fmt.Sprintf(`cd %s && claude "Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete."`, sess.WorktreePath, shortID)
+	}
+
+	writeJSON(w, http.StatusOK, LaunchAgentResponse{
+		SessionID:    sess.ID,
+		Branch:       sess.Branch,
+		WorktreePath: sess.WorktreePath,
 		Command:      command,
 	})
 }

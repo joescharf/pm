@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useProject, useDeleteProject } from "@/hooks/use-projects";
 import { useProjectIssues } from "@/hooks/use-issues";
 import { useSessions } from "@/hooks/use-sessions";
-import { useCloseAgent } from "@/hooks/use-agent";
+import { useCloseAgent, useResumeAgent } from "@/hooks/use-agent";
 import { useProjectHealth } from "@/hooks/use-status";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +60,7 @@ export function ProjectDetail() {
   const { data: sessionsData } = useSessions(id!);
   const deleteProject = useDeleteProject();
   const closeAgent = useCloseAgent();
+  const resumeAgent = useResumeAgent();
 
   const issues = issuesData ?? [];
   const sessions = sessionsData ?? [];
@@ -72,6 +73,24 @@ export function ProjectDetail() {
       { session_id: sessionId, status },
       {
         onSuccess: () => toast.success(`Session ${status}`),
+        onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+      }
+    );
+  };
+
+  const handleResume = (sessionId: string) => {
+    resumeAgent.mutate(
+      { session_id: sessionId },
+      {
+        onSuccess: (data) => {
+          toast.success("Session resumed");
+          if (data.command) {
+            navigator.clipboard.writeText(data.command).then(
+              () => toast.info("Command copied to clipboard"),
+              () => {}
+            );
+          }
+        },
         onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
       }
     );
@@ -188,6 +207,28 @@ export function ProjectDetail() {
               <dt className="text-muted-foreground">Group</dt>
               <dd className="mt-0.5">{project.GroupName || "—"}</dd>
             </div>
+            {project.BranchCount > 0 && (
+              <div>
+                <dt className="text-muted-foreground">Branches</dt>
+                <dd className="mt-0.5">{project.BranchCount}</dd>
+              </div>
+            )}
+            {project.HasGitHubPages && project.PagesURL && (
+              <div>
+                <dt className="text-muted-foreground">GitHub Pages</dt>
+                <dd className="mt-0.5">
+                  <a
+                    href={project.PagesURL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 hover:underline text-primary"
+                  >
+                    {project.PagesURL}
+                    <ExternalLink className="size-3" />
+                  </a>
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-muted-foreground">Created</dt>
               <dd className="mt-0.5">
@@ -318,6 +359,17 @@ export function ProjectDetail() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
+                        {wt.Status === "idle" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleResume(wt.ID)}
+                            disabled={resumeAgent.isPending}
+                          >
+                            Resume
+                          </Button>
+                        )}
                         {wt.Status === "active" && (
                           <Button
                             variant="outline"
