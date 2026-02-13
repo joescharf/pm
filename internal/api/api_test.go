@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -303,4 +305,38 @@ func TestUpdateProject_EmptyStringsShouldNotOverwrite(t *testing.T) {
 	assert.Equal(t, "https://github.com/test/full-project", fromDB.RepoURL, "RepoURL in DB should be preserved")
 	assert.Equal(t, "Go", fromDB.Language, "Language in DB should be preserved")
 	assert.Equal(t, "backend", fromDB.GroupName, "GroupName in DB should be preserved")
+}
+
+func TestCloseAgent(t *testing.T) {
+	srv, s := setupTestServer(t)
+	ctx := context.Background()
+
+	// Create project and issue
+	p := &models.Project{Name: "test-close", Path: "/tmp/test-close"}
+	require.NoError(t, s.CreateProject(ctx, p))
+	issue := &models.Issue{ProjectID: p.ID, Title: "Test issue", Status: models.IssueStatusInProgress, Priority: models.IssuePriorityMedium, Type: models.IssueTypeFeature}
+	require.NoError(t, s.CreateIssue(ctx, issue))
+
+	// Create a session
+	session := &models.AgentSession{
+		ProjectID:    p.ID,
+		IssueID:      issue.ID,
+		Branch:       "feature/test",
+		WorktreePath: "/tmp/test-close-feature-test",
+		Status:       models.SessionStatusActive,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, session))
+
+	// Close as completed
+	body := fmt.Sprintf(`{"session_id":"%s","status":"completed"}`, session.ID)
+	req := httptest.NewRequest("POST", "/api/v1/agent/close", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Verify issue was cascaded
+	updatedIssue, _ := s.GetIssue(ctx, issue.ID)
+	assert.Equal(t, models.IssueStatusDone, updatedIssue.Status)
 }

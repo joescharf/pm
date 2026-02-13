@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joescharf/pm/internal/agent"
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/health"
 	"github.com/joescharf/pm/internal/models"
@@ -63,6 +64,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/health/{id}", s.projectHealth)
 
 	mux.HandleFunc("POST /api/v1/agent/launch", s.launchAgent)
+	mux.HandleFunc("POST /api/v1/agent/close", s.closeAgent)
 
 	return corsMiddleware(mux)
 }
@@ -609,4 +611,63 @@ func issueToBranch(title string) string {
 		result = result[:50]
 	}
 	return "feature/" + result
+}
+
+// --- Agent Close ---
+
+// CloseAgentRequest is the JSON body for POST /api/v1/agent/close.
+type CloseAgentRequest struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"` // idle, completed, abandoned
+}
+
+// CloseAgentResponse is the JSON response for closing an agent session.
+type CloseAgentResponse struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+	EndedAt   string `json:"ended_at,omitempty"`
+}
+
+func (s *Server) closeAgent(w http.ResponseWriter, r *http.Request) {
+	var req CloseAgentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.SessionID == "" {
+		writeError(w, http.StatusBadRequest, "session_id is required")
+		return
+	}
+
+	target := models.SessionStatusIdle
+	if req.Status != "" {
+		target = models.SessionStatus(req.Status)
+	}
+
+	switch target {
+	case models.SessionStatusIdle, models.SessionStatusCompleted, models.SessionStatusAbandoned:
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid status: %s", req.Status))
+		return
+	}
+
+	session, err := agent.CloseSession(r.Context(), s.store, req.SessionID, target)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	resp := CloseAgentResponse{
+		SessionID: session.ID,
+		Status:    string(session.Status),
+	}
+	if session.EndedAt != nil {
+		resp.EndedAt = session.EndedAt.Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
