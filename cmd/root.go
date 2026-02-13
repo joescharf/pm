@@ -138,7 +138,7 @@ func getStore() (store.Store, error) {
 	}
 
 	if err := s.Migrate(rootCmd.Context()); err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 
