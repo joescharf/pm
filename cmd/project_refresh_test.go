@@ -77,7 +77,7 @@ func refreshTestEnv(t *testing.T) store.Store {
 	s, err := store.NewSQLiteStore(filepath.Join(dir, "pm.db"))
 	require.NoError(t, err)
 	require.NoError(t, s.Migrate(context.Background()))
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 
 	return s
 }

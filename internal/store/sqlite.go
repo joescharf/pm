@@ -42,13 +42,13 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 
 	// Enable WAL mode for concurrent reads
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("enable WAL mode: %w", err)
 	}
 
 	// Enable foreign keys
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 
@@ -211,7 +211,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, group string) ([]*models
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var projects []*models.Project
 	for rows.Next() {
@@ -353,7 +353,7 @@ func (s *SQLiteStore) ListIssues(ctx context.Context, filter IssueListFilter) ([
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var issues []*models.Issue
 	for rows.Next() {
@@ -432,7 +432,7 @@ func (s *SQLiteStore) ListTags(ctx context.Context) ([]*models.Tag, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tags []*models.Tag
 	for rows.Next() {
@@ -483,7 +483,7 @@ func (s *SQLiteStore) GetIssueTags(ctx context.Context, issueID string) ([]*mode
 	if err != nil {
 		return nil, fmt.Errorf("get issue tags: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tags []*models.Tag
 	for rows.Next() {
@@ -592,7 +592,7 @@ func (s *SQLiteStore) ListAgentSessions(ctx context.Context, projectID string, l
 	if err != nil {
 		return nil, fmt.Errorf("list agent sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []*models.AgentSession
 	for rows.Next() {

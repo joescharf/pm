@@ -24,7 +24,7 @@ func newTestStore(t *testing.T) *SQLiteStore {
 	err = s.Migrate(context.Background())
 	require.NoError(t, err)
 
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -34,7 +34,7 @@ func TestNewSQLiteStore_CreatesDirectory(t *testing.T) {
 
 	s, err := NewSQLiteStore(dbPath)
 	require.NoError(t, err)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_, err = os.Stat(filepath.Join(dir, "subdir"))
 	assert.NoError(t, err, "should create parent directory")
