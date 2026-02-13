@@ -1,0 +1,63 @@
+package agent
+
+import (
+	"context"
+	"testing"
+
+	"github.com/joescharf/pm/internal/models"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestReconcileSessions_OrphanedWorktree(t *testing.T) {
+	session := &models.AgentSession{
+		ID:           "sess-1",
+		IssueID:      "issue-1",
+		WorktreePath: "/nonexistent/path",
+		Status:       models.SessionStatusActive,
+	}
+	issue := &models.Issue{
+		ID:     "issue-1",
+		Status: models.IssueStatusInProgress,
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{"issue-1": issue},
+	}
+
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
+	assert.Equal(t, 1, cleaned)
+	assert.Equal(t, models.SessionStatusAbandoned, ms.sessions["sess-1"].Status)
+	assert.Equal(t, models.IssueStatusOpen, ms.issues["issue-1"].Status)
+}
+
+func TestReconcileSessions_ExistingWorktree(t *testing.T) {
+	session := &models.AgentSession{
+		ID:           "sess-1",
+		WorktreePath: t.TempDir(),
+		Status:       models.SessionStatusActive,
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{},
+	}
+
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
+	assert.Equal(t, 0, cleaned)
+	assert.Equal(t, models.SessionStatusActive, ms.sessions["sess-1"].Status)
+}
+
+func TestReconcileSessions_SkipsTerminal(t *testing.T) {
+	session := &models.AgentSession{
+		ID:           "sess-1",
+		WorktreePath: "/nonexistent",
+		Status:       models.SessionStatusCompleted,
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{},
+	}
+
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
+	assert.Equal(t, 0, cleaned)
+	assert.Equal(t, models.SessionStatusCompleted, ms.sessions["sess-1"].Status)
+}

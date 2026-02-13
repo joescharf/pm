@@ -386,6 +386,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	agent.ReconcileSessions(r.Context(), s.store, sessions)
 	writeJSON(w, http.StatusOK, sessions)
 }
 

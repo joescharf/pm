@@ -215,6 +215,9 @@ func agentListRun(projectRef string) error {
 		return err
 	}
 
+	// Reconcile orphaned worktrees
+	agent.ReconcileSessions(ctx, s, sessions)
+
 	// Filter to running only
 	var active []*models.AgentSession
 	for _, sess := range sessions {
