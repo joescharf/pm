@@ -27,8 +27,9 @@ pm issue close <id>             # Close an issue
 pm issue link <id>              # --github <number>
 pm issue import <file>          # Import issues from markdown (--project, --dry-run)
 
-pm agent list [project]         # Active sessions (default subcommand)
-pm agent launch <project>       # --issue, --branch
+pm agent list [project]         # Active/idle sessions (default subcommand)
+pm agent launch <project>       # --issue, --branch (resumes idle sessions)
+pm agent close [session_id]     # Close session (--done, --abandon; auto-detects from cwd)
 pm agent history [project]      # Session history
 
 pm tag list                     # List tags (default subcommand)
@@ -67,13 +68,16 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 | `pm_create_issue` | Create issue (project + title required; opt: description, type, priority) |
 | `pm_update_issue` | Update issue fields (issue_id required; opt: status, title, description, priority) |
 | `pm_health_score` | Health score breakdown for a project (project required) |
-| `pm_launch_agent` | Create worktree + agent session (project required; opt: issue_id, branch) |
+| `pm_launch_agent` | Create worktree + agent session, or resume idle session (project required; opt: issue_id, branch) |
+| `pm_close_agent` | Close agent session (session_id required; opt: status — idle/completed/abandoned) |
 
 ## Key Patterns
 
 - **Short IDs**: First 12 chars of ULID (e.g., `01KHA4NVKG01`)
 - **Auto-detection**: `pm` and `pm issue` auto-detect project from cwd
 - **Issue lifecycle**: open -> in_progress -> done -> closed
+- **Session lifecycle**: active -> idle -> completed/abandoned (idle = worktree exists, no active Claude session)
+- **Issue cascading**: session completed -> issue done; session abandoned -> issue open
 - **Priorities**: low, medium, high
 - **Types**: feature, bug, chore
 - **Config**: Uses `viper.SetDefault()` with nested keys like `github.default_org`
