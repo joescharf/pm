@@ -138,6 +138,26 @@ func agentLaunchRun(projectRef string) error {
 	// Compute worktree path
 	worktreePath := fmt.Sprintf("%s-%s", p.Path, strings.ReplaceAll(branch, "/", "-"))
 
+	// Check for existing idle session on this branch
+	existingSessions, _ := s.ListAgentSessions(ctx, p.ID, 0)
+	for _, sess := range existingSessions {
+		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
+			// Resume: reactivate existing session, skip worktree creation
+			sess.Status = models.SessionStatusActive
+			if err := s.UpdateAgentSession(ctx, sess); err != nil {
+				ui.Warning("Failed to reactivate session: %v", err)
+			} else {
+				ui.Success("Resumed session %s for %s on branch %s", output.Cyan(shortID(sess.ID)), output.Cyan(p.Name), output.Cyan(branch))
+				if resolvedIssueID != "" {
+					ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", worktreePath, shortID(resolvedIssueID))
+				} else {
+					ui.Info("Run: cd %s && claude", worktreePath)
+				}
+				return nil
+			}
+		}
+	}
+
 	if dryRun {
 		ui.DryRunMsg("Would launch agent for %s on branch %s", p.Name, branch)
 		return nil

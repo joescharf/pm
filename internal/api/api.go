@@ -513,6 +513,33 @@ func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
 	// Worktree path: <project.Path>-<branch_with_slashes_replaced_by_hyphens>
 	worktreePath := project.Path + "-" + strings.ReplaceAll(branch, "/", "-")
 
+	// Check for existing idle session on this branch
+	existingSessions, _ := s.store.ListAgentSessions(ctx, project.ID, 0)
+	for _, sess := range existingSessions {
+		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
+			sess.Status = models.SessionStatusActive
+			if err := s.store.UpdateAgentSession(ctx, sess); err == nil {
+				var issueRefs []string
+				for _, issue := range issues {
+					id := issue.ID
+					if len(id) > 12 {
+						id = id[:12]
+					}
+					issueRefs = append(issueRefs, id)
+				}
+				prompt := fmt.Sprintf("Use pm MCP tools to look up issue(s) %s and implement them. Update issue status when complete.", strings.Join(issueRefs, ", "))
+				command := fmt.Sprintf(`cd %s && claude "%s"`, sess.WorktreePath, prompt)
+				writeJSON(w, http.StatusOK, LaunchAgentResponse{
+					SessionID:    sess.ID,
+					Branch:       branch,
+					WorktreePath: sess.WorktreePath,
+					Command:      command,
+				})
+				return
+			}
+		}
+	}
+
 	// Create worktree
 	if err := s.wt.Create(project.Path, branch); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create worktree: %v", err))

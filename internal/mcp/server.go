@@ -559,6 +559,39 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 		return mcp.NewToolResultError("specify branch or issue_id to generate a branch name"), nil
 	}
 
+	// Determine worktree path (convention: sibling directory named after branch)
+	worktreePath := fmt.Sprintf("%s-%s", p.Path, strings.ReplaceAll(branch, "/", "-"))
+
+	// Check for existing idle session on this branch
+	existingSessions, _ := s.store.ListAgentSessions(ctx, p.ID, 0)
+	for _, sess := range existingSessions {
+		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
+			sess.Status = models.SessionStatusActive
+			if err := s.store.UpdateAgentSession(ctx, sess); err == nil {
+				command := fmt.Sprintf("cd %s && claude", sess.WorktreePath)
+				if issueID != "" {
+					shortIssueID := issueID
+					if len(shortIssueID) > 12 {
+						shortIssueID = shortIssueID[:12]
+					}
+					command = fmt.Sprintf(`cd %s && claude "Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete."`, sess.WorktreePath, shortIssueID)
+				}
+				result := map[string]any{
+					"session_id":    sess.ID,
+					"project":       p.Name,
+					"branch":        branch,
+					"worktree_path": sess.WorktreePath,
+					"issue_id":      issueID,
+					"status":        string(sess.Status),
+					"resumed":       true,
+					"command":       command,
+				}
+				data, _ := json.Marshal(result)
+				return mcp.NewToolResultText(string(data)), nil
+			}
+		}
+	}
+
 	// Create worktree
 	if s.wt == nil {
 		return mcp.NewToolResultError("worktree client not available"), nil
@@ -566,9 +599,6 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 	if err := s.wt.Create(p.Path, branch); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to create worktree: %v", err)), nil
 	}
-
-	// Determine worktree path (convention: sibling directory named after branch)
-	worktreePath := fmt.Sprintf("%s-%s", p.Path, strings.ReplaceAll(branch, "/", "-"))
 
 	// Record agent session
 	session := &models.AgentSession{
