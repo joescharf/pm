@@ -42,3 +42,4 @@ internal/ui/dist/assets/
 # Docs (mkdocs-material)
 docs/.venv/
 docs/site/
+pm
