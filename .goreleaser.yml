@@ -103,8 +103,7 @@ release:
   ids: [pm-macos-archive, pm-linux-archive, pm-windows-archive]
   extra_files:
     - glob: ./dist/pm_macos_universal.pkg
-  draft: true
-  replace_existing_draft: true
+  draft: false
   prerelease: auto
 
 homebrew_casks:
