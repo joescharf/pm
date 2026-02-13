@@ -352,6 +352,55 @@ func TestAgentSessionCRUD(t *testing.T) {
 	assert.Len(t, sessions, 2)
 }
 
+func TestGetAgentSession(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	p := &models.Project{Name: "test-proj", Path: "/tmp/test-proj"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	session := &models.AgentSession{
+		ProjectID:    p.ID,
+		IssueID:      "issue-1",
+		Branch:       "feature/test",
+		WorktreePath: "/tmp/test-proj-feature-test",
+		Status:       models.SessionStatusActive,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, session))
+
+	got, err := s.GetAgentSession(ctx, session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, session.ID, got.ID)
+	assert.Equal(t, models.SessionStatusActive, got.Status)
+	assert.Equal(t, "/tmp/test-proj-feature-test", got.WorktreePath)
+
+	_, err = s.GetAgentSession(ctx, "nonexistent")
+	assert.Error(t, err)
+}
+
+func TestGetAgentSessionByWorktreePath(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	p := &models.Project{Name: "test-proj", Path: "/tmp/test-proj"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	session := &models.AgentSession{
+		ProjectID:    p.ID,
+		Branch:       "feature/test",
+		WorktreePath: "/tmp/test-proj-feature-test",
+		Status:       models.SessionStatusActive,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, session))
+
+	got, err := s.GetAgentSessionByWorktreePath(ctx, "/tmp/test-proj-feature-test")
+	require.NoError(t, err)
+	assert.Equal(t, session.ID, got.ID)
+
+	_, err = s.GetAgentSessionByWorktreePath(ctx, "/nonexistent")
+	assert.Error(t, err)
+}
+
 func TestGetProject_NotFound(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

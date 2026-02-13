@@ -507,6 +507,51 @@ func (s *SQLiteStore) CreateAgentSession(ctx context.Context, session *models.Ag
 	return nil
 }
 
+func (s *SQLiteStore) GetAgentSession(ctx context.Context, id string) (*models.AgentSession, error) {
+	session := &models.AgentSession{}
+	var status string
+	var endedAt sql.NullTime
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, started_at, ended_at
+		FROM agent_sessions WHERE id = ?`, id,
+	).Scan(&session.ID, &session.ProjectID, &session.IssueID,
+		&session.Branch, &session.WorktreePath, &status,
+		&session.Outcome, &session.CommitCount, &session.StartedAt, &endedAt)
+	if err != nil {
+		return nil, fmt.Errorf("agent session not found: %s", id)
+	}
+
+	session.Status = models.SessionStatus(status)
+	if endedAt.Valid {
+		session.EndedAt = &endedAt.Time
+	}
+	return session, nil
+}
+
+func (s *SQLiteStore) GetAgentSessionByWorktreePath(ctx context.Context, path string) (*models.AgentSession, error) {
+	session := &models.AgentSession{}
+	var status string
+	var endedAt sql.NullTime
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, started_at, ended_at
+		FROM agent_sessions WHERE worktree_path = ? AND status IN ('active', 'idle')
+		ORDER BY started_at DESC LIMIT 1`, path,
+	).Scan(&session.ID, &session.ProjectID, &session.IssueID,
+		&session.Branch, &session.WorktreePath, &status,
+		&session.Outcome, &session.CommitCount, &session.StartedAt, &endedAt)
+	if err != nil {
+		return nil, fmt.Errorf("no active/idle session for worktree: %s", path)
+	}
+
+	session.Status = models.SessionStatus(status)
+	if endedAt.Valid {
+		session.EndedAt = &endedAt.Time
+	}
+	return session, nil
+}
+
 func (s *SQLiteStore) ListAgentSessions(ctx context.Context, projectID string, limit int) ([]*models.AgentSession, error) {
 	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, started_at, ended_at
 		FROM agent_sessions`

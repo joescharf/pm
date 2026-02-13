@@ -183,6 +183,24 @@ func (m *mockStore) ListAgentSessions(_ context.Context, projectID string, limit
 	}
 	return result, nil
 }
+func (m *mockStore) GetAgentSession(_ context.Context, id string) (*models.AgentSession, error) {
+	for _, s := range m.sessions {
+		if s.ID == id {
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("agent session not found: %s", id)
+}
+
+func (m *mockStore) GetAgentSessionByWorktreePath(_ context.Context, path string) (*models.AgentSession, error) {
+	for _, s := range m.sessions {
+		if s.WorktreePath == path && (s.Status == models.SessionStatusActive || s.Status == models.SessionStatusIdle) {
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("no active/idle session for worktree: %s", path)
+}
+
 func (m *mockStore) UpdateAgentSession(_ context.Context, _ *models.AgentSession) error { return nil }
 func (m *mockStore) Migrate(_ context.Context) error                                    { return nil }
 func (m *mockStore) Close() error                                                       { return nil }
