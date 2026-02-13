@@ -1,0 +1,119 @@
+package llm
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
+)
+
+// ExtractedIssue holds a single issue extracted from markdown content.
+type ExtractedIssue struct {
+	Project     string `json:"project"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Priority    string `json:"priority"`
+}
+
+// Client wraps the Anthropic API for issue extraction.
+type Client struct {
+	api   *anthropic.Client
+	model anthropic.Model
+}
+
+// NewClient creates an LLM client with the given API key and model.
+func NewClient(apiKey, model string) *Client {
+	opts := []option.RequestOption{}
+	if apiKey != "" {
+		opts = append(opts, option.WithAPIKey(apiKey))
+	}
+	client := anthropic.NewClient(opts...)
+	return &Client{
+		api:   &client,
+		model: anthropic.Model(model),
+	}
+}
+
+// buildPrompt constructs the system and user prompts for issue extraction.
+func buildPrompt(content string, projects []string) (system string, user string) {
+	system = `You extract structured issues from markdown content. Return ONLY a JSON array of objects with these fields:
+- "project": the project name these issues belong to (infer from headings like "## Project <name>" or context)
+- "title": concise issue title
+- "description": brief description of the issue (can be empty string if the title is self-explanatory)
+- "type": one of "feature", "bug", "chore"
+- "priority": one of "low", "medium", "high"
+
+Rules:
+- Each numbered/bulleted item is one issue
+- Infer type from context (new capabilities = feature, problems = bug, maintenance = chore)
+- Default priority to "medium" unless context suggests otherwise
+- Match project names to the known projects list when possible
+- Return valid JSON only, no markdown fencing or explanation`
+
+	var sb strings.Builder
+	if len(projects) > 0 {
+		sb.WriteString("Known projects: ")
+		sb.WriteString(strings.Join(projects, ", "))
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString("Extract issues from this markdown:\n\n")
+	sb.WriteString(content)
+	user = sb.String()
+	return
+}
+
+// ExtractIssues sends markdown content to the LLM and returns structured issues.
+func (c *Client) ExtractIssues(ctx context.Context, content string, projects []string) ([]ExtractedIssue, error) {
+	systemPrompt, userPrompt := buildPrompt(content, projects)
+
+	msg, err := c.api.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     c.model,
+		MaxTokens: 4096,
+		System: []anthropic.TextBlockParam{
+			{Text: systemPrompt},
+		},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt)),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call: %w", err)
+	}
+
+	// Extract text from response
+	var text string
+	for _, block := range msg.Content {
+		if block.Type == "text" {
+			text = block.Text
+			break
+		}
+	}
+
+	if text == "" {
+		return nil, fmt.Errorf("no text content in API response")
+	}
+
+	// Strip markdown fencing if present
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```") {
+		lines := strings.SplitN(text, "\n", 2)
+		if len(lines) > 1 {
+			text = lines[1]
+		}
+		if idx := strings.LastIndex(text, "```"); idx >= 0 {
+			text = text[:idx]
+		}
+		text = strings.TrimSpace(text)
+	}
+
+	var issues []ExtractedIssue
+	if err := json.Unmarshal([]byte(text), &issues); err != nil {
+		return nil, fmt.Errorf("parse LLM response as JSON: %w\nraw response: %s", err, text)
+	}
+
+	return issues, nil
+}

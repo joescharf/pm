@@ -87,6 +87,8 @@ func initConfig() {
 	viper.SetDefault("github.default_org", "")
 	viper.SetDefault("agent.model", "opus")
 	viper.SetDefault("agent.auto_launch", false)
+	viper.SetDefault("anthropic.api_key", "")
+	viper.SetDefault("anthropic.model", "claude-haiku-4-5-20251001")
 
 	// Read config file if it exists (optional)
 	_ = viper.ReadInConfig()
