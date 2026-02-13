@@ -307,7 +307,7 @@ func TestAgentSessionCRUD(t *testing.T) {
 		IssueID:      "",
 		Branch:       "feature/test",
 		WorktreePath: "/tmp/proj-wt/feature-test",
-		Status:       models.SessionStatusRunning,
+		Status:       models.SessionStatusActive,
 	}
 	err := s.CreateAgentSession(ctx, session)
 	require.NoError(t, err)
@@ -317,7 +317,7 @@ func TestAgentSessionCRUD(t *testing.T) {
 	sessions, err := s.ListAgentSessions(ctx, p.ID, 10)
 	require.NoError(t, err)
 	assert.Len(t, sessions, 1)
-	assert.Equal(t, models.SessionStatusRunning, sessions[0].Status)
+	assert.Equal(t, models.SessionStatusActive, sessions[0].Status)
 
 	// Update
 	now := time.Now().UTC()
@@ -338,7 +338,7 @@ func TestAgentSessionCRUD(t *testing.T) {
 	session2 := &models.AgentSession{
 		ProjectID: p.ID,
 		Branch:    "feature/other",
-		Status:    models.SessionStatusRunning,
+		Status:    models.SessionStatusActive,
 	}
 	require.NoError(t, s.CreateAgentSession(ctx, session2))
 

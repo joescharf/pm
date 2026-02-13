@@ -927,7 +927,7 @@ func TestHandleLaunchAgent(t *testing.T) {
 	session := ms.createdSessions[0]
 	assert.Equal(t, p.ID, session.ProjectID)
 	assert.Equal(t, issue.ID, session.IssueID)
-	assert.Equal(t, models.SessionStatusRunning, session.Status)
+	assert.Equal(t, models.SessionStatusActive, session.Status)
 }
 
 func TestHandleLaunchAgent_MissingProject(t *testing.T) {

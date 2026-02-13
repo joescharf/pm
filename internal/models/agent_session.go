@@ -6,9 +6,9 @@ import "time"
 type SessionStatus string
 
 const (
-	SessionStatusRunning   SessionStatus = "running"
+	SessionStatusActive    SessionStatus = "active"
+	SessionStatusIdle      SessionStatus = "idle"
 	SessionStatusCompleted SessionStatus = "completed"
-	SessionStatusFailed    SessionStatus = "failed"
 	SessionStatusAbandoned SessionStatus = "abandoned"
 )
 

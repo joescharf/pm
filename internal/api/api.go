@@ -525,7 +525,7 @@ func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
 		IssueID:      req.IssueIDs[0],
 		Branch:       branch,
 		WorktreePath: worktreePath,
-		Status:       models.SessionStatusRunning,
+		Status:       models.SessionStatusActive,
 	}
 	if err := s.store.CreateAgentSession(ctx, session); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create session: %v", err))
@@ -538,13 +538,17 @@ func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.UpdateIssue(ctx, issue)
 	}
 
-	// Build issue titles for the command prompt
-	var titles []string
+	// Build command prompt with issue IDs for MCP lookup
+	var issueRefs []string
 	for _, issue := range issues {
-		titles = append(titles, issue.Title)
+		id := issue.ID
+		if len(id) > 12 {
+			id = id[:12]
+		}
+		issueRefs = append(issueRefs, id)
 	}
-	prompt := "Work on these issues: " + strings.Join(titles, "; ")
-	command := fmt.Sprintf("cd %s && claude '%s'", worktreePath, prompt)
+	prompt := fmt.Sprintf("Use pm MCP tools to look up issue(s) %s and implement them. Update issue status when complete.", strings.Join(issueRefs, ", "))
+	command := fmt.Sprintf(`cd %s && claude "%s"`, worktreePath, prompt)
 
 	writeJSON(w, http.StatusOK, LaunchAgentResponse{
 		SessionID:    session.ID,

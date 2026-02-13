@@ -90,12 +90,14 @@ func agentLaunchRun(projectRef string) error {
 
 	// Determine branch name
 	branch := agentBranch
+	resolvedIssueID := agentIssue
 	if branch == "" && agentIssue != "" {
 		issue, err := findIssue(ctx, s, agentIssue)
 		if err != nil {
 			return fmt.Errorf("find issue: %w", err)
 		}
 		branch = issueToBranch(issue.Title)
+		resolvedIssueID = issue.ID
 
 		// Update issue status to in_progress
 		issue.Status = models.IssueStatusInProgress
@@ -104,6 +106,9 @@ func agentLaunchRun(projectRef string) error {
 	if branch == "" {
 		return fmt.Errorf("specify --branch or --issue to generate a branch name")
 	}
+
+	// Compute worktree path
+	worktreePath := fmt.Sprintf("%s-%s", p.Path, strings.ReplaceAll(branch, "/", "-"))
 
 	if dryRun {
 		ui.DryRunMsg("Would launch agent for %s on branch %s", p.Name, branch)
@@ -119,16 +124,25 @@ func agentLaunchRun(projectRef string) error {
 
 	// Record session
 	session := &models.AgentSession{
-		ProjectID: p.ID,
-		IssueID:   agentIssue,
-		Branch:    branch,
-		Status:    models.SessionStatusRunning,
+		ProjectID:    p.ID,
+		IssueID:      resolvedIssueID,
+		Branch:       branch,
+		WorktreePath: worktreePath,
+		Status:       models.SessionStatusActive,
 	}
 	if err := s.CreateAgentSession(ctx, session); err != nil {
 		ui.Warning("Session recording failed: %v", err)
 	}
 
 	ui.Success("Agent launched for %s on branch %s", output.Cyan(p.Name), output.Cyan(branch))
+
+	// Show the command to run
+	if resolvedIssueID != "" {
+		shortIssueID := shortID(resolvedIssueID)
+		ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", worktreePath, shortIssueID)
+	} else {
+		ui.Info("Run: cd %s && claude", worktreePath)
+	}
 	return nil
 }
 
@@ -156,7 +170,7 @@ func agentListRun(projectRef string) error {
 	// Filter to running only
 	var active []*models.AgentSession
 	for _, sess := range sessions {
-		if sess.Status == models.SessionStatusRunning {
+		if sess.Status == models.SessionStatusActive {
 			active = append(active, sess)
 		}
 	}
@@ -225,7 +239,7 @@ func agentHistoryRun(projectRef string) error {
 			}
 		}
 
-		duration := "running"
+		duration := "active"
 		if sess.EndedAt != nil {
 			d := sess.EndedAt.Sub(sess.StartedAt)
 			duration = formatDuration(d)

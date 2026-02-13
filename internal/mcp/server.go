@@ -576,12 +576,21 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 		IssueID:      issueID,
 		Branch:       branch,
 		WorktreePath: worktreePath,
-		Status:       models.SessionStatusRunning,
+		Status:       models.SessionStatusActive,
 		StartedAt:    time.Now(),
 	}
 	if err := s.store.CreateAgentSession(ctx, session); err != nil {
 		// Non-fatal: worktree was already created
 		return mcp.NewToolResultError(fmt.Sprintf("worktree created but session recording failed: %v", err)), nil
+	}
+
+	command := fmt.Sprintf("cd %s && claude", worktreePath)
+	if issueID != "" {
+		shortIssueID := issueID
+		if len(shortIssueID) > 12 {
+			shortIssueID = shortIssueID[:12]
+		}
+		command = fmt.Sprintf(`cd %s && claude "Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete."`, worktreePath, shortIssueID)
 	}
 
 	result := map[string]any{
@@ -591,7 +600,7 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 		"worktree_path": worktreePath,
 		"issue_id":      issueID,
 		"status":        string(session.Status),
-		"command":        fmt.Sprintf("cd %s && claude", worktreePath),
+		"command":        command,
 	}
 
 	data, err := json.Marshal(result)
