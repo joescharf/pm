@@ -135,8 +135,8 @@ func TestDetectSource(t *testing.T) {
 	fileValues := map[string]bool{"key_a": true}
 
 	// From env
-	os.Setenv("PM_TEST_KEY", "val")
-	defer os.Unsetenv("PM_TEST_KEY")
+	_ = os.Setenv("PM_TEST_KEY", "val")
+	defer func() { _ = os.Unsetenv("PM_TEST_KEY") }()
 	assert.Contains(t, detectSource("test_key", "PM_TEST_KEY", fileValues), "env")
 
 	// From file
