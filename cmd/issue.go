@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/output"
 	"github.com/joescharf/pm/internal/store"
@@ -389,14 +390,26 @@ func resolveProjectOrCwd(ctx context.Context, s store.Store, ref string) (*model
 }
 
 // resolveProjectFromCwd tries to find a tracked project matching the current directory.
+// It first checks the exact cwd path, then falls back to the git repo root.
 func resolveProjectFromCwd(ctx context.Context, s store.Store) (*models.Project, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("get working directory: %w", err)
 	}
+
+	// Try exact path match
 	if p, err := s.GetProjectByPath(ctx, cwd); err == nil {
 		return p, nil
 	}
+
+	// Try git repo root (supports subdirectories)
+	gc := git.NewClient()
+	if root, err := gc.RepoRoot(cwd); err == nil && root != cwd {
+		if p, err := s.GetProjectByPath(ctx, root); err == nil {
+			return p, nil
+		}
+	}
+
 	return nil, fmt.Errorf("no tracked project found for current directory: %s\nSpecify a project name or run from a tracked project directory", cwd)
 }
 

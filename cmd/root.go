@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/output"
 	"github.com/joescharf/pm/internal/store"
 )
@@ -46,6 +48,10 @@ func Execute(version, commit, date string) {
 
 func init() {
 	cobra.OnInitialize(initConfig, initDeps)
+
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return rootRun(cmd)
+	}
 
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "Show what would happen without making changes")
@@ -93,6 +99,27 @@ func initDeps() {
 
 	// Initialize store lazily — only when commands actually need it.
 	// This allows config/version commands to run without a db.
+}
+
+// rootRun handles `pm` with no subcommand: detect project from cwd, refresh, and show.
+func rootRun(cmd *cobra.Command) error {
+	s, err := getStore()
+	if err != nil {
+		return cmd.Help()
+	}
+
+	ctx := context.Background()
+	p, err := resolveProjectFromCwd(ctx, s)
+	if err != nil {
+		return cmd.Help()
+	}
+
+	// Best-effort refresh
+	gc := git.NewClient()
+	ghc := git.NewGitHubClient()
+	_, _ = refreshProject(ctx, s, p, gc, ghc)
+
+	return projectShowRun(p.Name)
 }
 
 // getStore returns the shared store, initializing it on first call.
