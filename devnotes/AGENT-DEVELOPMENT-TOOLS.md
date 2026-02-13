@@ -38,3 +38,18 @@ Run "uvx showboat --help" and then use showboat to create a document describing 
 ### Use case:
 
 Use rodney to validate web pages you just built to ensure they have the expected content, structure, and functionality. For example, you could use rodney to check that a new feature you just built is present in a build of the web app, and if not, you can iterate on the feature until it is present and correct.
+
+## shot-scraper - A command-line utility for taking automated screenshots of websites
+
+- Invoke with `uvx shot-scraper`
+
+Use shot-scraper to take automated screenshots of websites, which can be useful for visual regression testing, monitoring website changes, or ensuring that documentation has the latest screenshots.
+
+- [Repo](https://github.com/simonw/shot-scraper)
+- [Docs](https://shot-scraper.datasette.io/)
+
+## When finishing a feature or release:
+
+### Agent Prompt: 
+
+update readme and user facing documentation, Run "uvx showboat --help" and then use showboat to create a document describing the feature(s) you just built and output it to a new markdown file in the `devnotes/` directory named with a short slug describing the feature. Commit the changes, close the issues in the `pm` tracker

@@ -8,6 +8,7 @@ pm project remove <name-or-path>  Remove a project (alias: rm)
 pm project list                 List tracked projects (alias: ls)
 pm project show <name>          Show detailed project information
 pm project scan <directory>     Auto-discover git repos in a directory
+pm project refresh [name]       Re-detect metadata from git and GitHub
 ```
 
 ## project add
@@ -104,7 +105,9 @@ Displays:
 
 - **Header:** name, path, description, group, language, remote URL
 - **Git info:** current branch, dirty/clean status, last commit hash and message, activity age
+- **Branch count** across the repository
 - **Worktree count** (excluding the main worktree)
+- **GitHub Pages** URL (if configured)
 - **Go-specific info** (if applicable): Go version, module path
 - **Issue counts:** open and in-progress
 - **GitHub release info** (if remote URL is set): latest release tag and date
@@ -124,6 +127,34 @@ pm project scan <directory>
 ```
 
 Scans the top-level entries in the given directory. For each subdirectory that is a git repository root and not already tracked, it adds the project automatically.
+
+## project refresh
+
+Re-detect metadata for tracked projects from git and GitHub.
+
+```bash
+pm project refresh [name]
+```
+
+Without `<name>`, refreshes all tracked projects. With a project name, refreshes only that project.
+
+**What gets refreshed:**
+
+- **Language** -- Re-detects from project files (go.mod, package.json, Cargo.toml, etc.)
+- **Remote URL** -- Updates from `git remote get-url origin`
+- **Branch count** -- Counts all branches via `git branch -a`
+- **Description** -- Syncs from GitHub repo "About" section (always updates when different)
+- **GitHub Pages** -- Detects if GitHub Pages is configured and stores the URL
+
+**Examples:**
+
+```bash
+# Refresh a single project
+pm project refresh my-api
+
+# Refresh all projects
+pm project refresh
+```
 
 Dotfile directories (starting with `.`) are skipped.
 

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/joescharf/pm/internal/agent"
+	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/output"
 	"github.com/joescharf/pm/internal/store"
@@ -144,6 +145,8 @@ func agentLaunchRun(projectRef string) error {
 		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
 			// Resume: reactivate existing session, skip worktree creation
 			sess.Status = models.SessionStatusActive
+			now := time.Now().UTC()
+			sess.LastActiveAt = &now
 			if err := s.UpdateAgentSession(ctx, sess); err != nil {
 				ui.Warning("Failed to reactivate session: %v", err)
 			} else {
@@ -232,7 +235,7 @@ func agentListRun(projectRef string) error {
 	}
 
 	projectNames := make(map[string]string)
-	table := ui.Table([]string{"ID", "Project", "Branch", "Status", "Worktree", "Started"})
+	table := ui.Table([]string{"ID", "Project", "Branch", "Status", "Worktree", "Last Active", "Started"})
 	for _, sess := range live {
 		projName := projectNames[sess.ProjectID]
 		if projName == "" {
@@ -242,12 +245,18 @@ func agentListRun(projectRef string) error {
 			}
 		}
 
+		lastActive := "—"
+		if sess.LastActiveAt != nil {
+			lastActive = timeAgo(*sess.LastActiveAt)
+		}
+
 		table.Append([]string{
 			shortID(sess.ID),
 			projName,
 			sess.Branch,
 			output.StatusColor(string(sess.Status)),
 			sess.WorktreePath,
+			lastActive,
 			timeAgo(sess.StartedAt),
 		})
 	}
@@ -282,7 +291,7 @@ func agentHistoryRun(projectRef string) error {
 	}
 
 	projectNames := make(map[string]string)
-	table := ui.Table([]string{"ID", "Project", "Branch", "Status", "Commits", "Duration"})
+	table := ui.Table([]string{"ID", "Project", "Branch", "Status", "Commits", "Last Commit", "Duration"})
 	for _, sess := range sessions {
 		projName := projectNames[sess.ProjectID]
 		if projName == "" {
@@ -298,12 +307,22 @@ func agentHistoryRun(projectRef string) error {
 			duration = formatDuration(d)
 		}
 
+		lastCommit := "—"
+		if sess.LastCommitHash != "" {
+			msg := sess.LastCommitMessage
+			if len(msg) > 40 {
+				msg = msg[:40] + "..."
+			}
+			lastCommit = fmt.Sprintf("%s %s", sess.LastCommitHash, msg)
+		}
+
 		table.Append([]string{
 			shortID(sess.ID),
 			projName,
 			sess.Branch,
 			output.StatusColor(string(sess.Status)),
 			fmt.Sprintf("%d", sess.CommitCount),
+			lastCommit,
 			duration,
 		})
 	}
@@ -333,6 +352,13 @@ func agentCloseRun(sessionRef string) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Enrich session with git info before closing
+	gc := git.NewClient()
+	if sess, err := s.GetAgentSession(ctx, sessionID); err == nil {
+		agent.EnrichSessionWithGitInfo(sess, gc)
+		_ = s.UpdateAgentSession(ctx, sess)
 	}
 
 	session, err := agent.CloseSession(ctx, s, sessionID, target)

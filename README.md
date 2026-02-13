@@ -18,8 +18,9 @@ When you're developing across many repos with AI coding agents, you need a way t
 
 - **Project tracking** -- Add, scan, and organize repos by group
 - **Issue management** -- Track bugs, features, and chores with priorities and tags
-- **Agent sessions** -- Launch Claude Code agents in worktrees, tied to issues
+- **Agent sessions** -- Launch, close, and resume Claude Code agents in worktrees, tied to issues, with commit tracking and last-active timestamps
 - **Health scoring** -- 0-100 composite score across 5 dimensions (git cleanliness, activity, issues, releases, branches)
+- **GitHub metadata** -- Auto-detect branch count, GitHub Pages status, and repo description on project refresh
 - **Standards checking** -- Verify projects follow conventions (Makefile, CLAUDE.md, tests, etc.)
 - **Web dashboard** -- Embedded React UI served alongside a REST API
 - **Issue import** -- Bulk-import issues from markdown files with LLM-powered extraction
@@ -102,7 +103,7 @@ See the [full configuration docs](docs/docs/configuration.md) for details.
 pm project add|remove|list|show|scan|refresh   Manage tracked projects
 pm issue add|list|show|update|close|link|import   Manage issues and features
 pm status [project]                    Cross-project status dashboard
-pm agent launch|list|history           Manage AI agent sessions
+pm agent launch|close|list|history     Manage AI agent sessions
 pm worktree list|create                Manage git worktrees (alias: wt)
 pm tag list|create|delete              Manage issue tags
 pm standards [project]                 Check project standardization
@@ -123,6 +124,7 @@ Global flags: `--verbose (-v)`, `--dry-run (-n)`, `--config <path>`
 - **Dashboard** -- Overview of all projects with health scores, open issue counts, and quick links
 - **Projects** -- Detailed project view with git metadata, issues, and health breakdown
 - **Issues** -- All issues grouped by project with status/priority/tag filters
+- **Sessions** -- Agent session list with project column, clickable detail view showing git state (commits, ahead/behind, dirty status)
 - **REST API** -- Full CRUD API at `/api/v1/` for programmatic access
 
 The UI is a React/TypeScript SPA built with Vite, TanStack Query, and shadcn/ui, embedded directly into the Go binary.

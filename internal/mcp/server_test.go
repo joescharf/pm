@@ -245,12 +245,15 @@ func (m *mockGitClient) WorktreeList(_ string) ([]git.WorktreeInfo, error) {
 }
 func (m *mockGitClient) RemoteURL(_ string) (string, error) { return m.remoteURL, nil }
 func (m *mockGitClient) LatestTag(_ string) (string, error) { return m.latestTag, nil }
+func (m *mockGitClient) CommitCountSince(_, _ string) (int, error) { return 0, nil }
+func (m *mockGitClient) AheadBehind(_, _ string) (int, int, error) { return 0, 0, nil }
 
 // mockGHClient implements git.GitHubClient for testing.
 type mockGHClient struct {
-	release  *git.Release
-	prs      []git.PullRequest
-	repoInfo *git.RepoInfo
+	release   *git.Release
+	prs       []git.PullRequest
+	repoInfo  *git.RepoInfo
+	pagesInfo *git.PagesResult
 }
 
 func (m *mockGHClient) LatestRelease(_, _ string) (*git.Release, error) {
@@ -265,6 +268,12 @@ func (m *mockGHClient) RepoInfo(_, _ string) (*git.RepoInfo, error) {
 		return nil, fmt.Errorf("no repo info")
 	}
 	return m.repoInfo, nil
+}
+func (m *mockGHClient) PagesInfo(_, _ string) (*git.PagesResult, error) {
+	if m.pagesInfo == nil {
+		return nil, nil
+	}
+	return m.pagesInfo, nil
 }
 
 // mockWTClient implements wt.Client for testing.

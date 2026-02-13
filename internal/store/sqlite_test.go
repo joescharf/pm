@@ -429,6 +429,80 @@ func TestUpdateProject_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestProjectNewFields(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Create a project with the new fields set
+	p := &models.Project{
+		Name:           "pages-proj",
+		Path:           "/tmp/pages-proj",
+		BranchCount:    5,
+		HasGitHubPages: true,
+		PagesURL:       "https://example.github.io",
+	}
+	require.NoError(t, s.CreateProject(ctx, p))
+	assert.NotEmpty(t, p.ID)
+
+	// Retrieve and verify round-trip
+	got, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 5, got.BranchCount)
+	assert.True(t, got.HasGitHubPages)
+	assert.Equal(t, "https://example.github.io", got.PagesURL)
+
+	// Update BranchCount to 10 and verify
+	got.BranchCount = 10
+	require.NoError(t, s.UpdateProject(ctx, got))
+
+	got2, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 10, got2.BranchCount)
+	assert.True(t, got2.HasGitHubPages)
+	assert.Equal(t, "https://example.github.io", got2.PagesURL)
+}
+
+func TestSessionNewFields(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Create project first (foreign key)
+	p := &models.Project{Name: "sess-proj", Path: "/tmp/sess-proj"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Create a session with the new fields set
+	lastActive := time.Now().UTC().Truncate(time.Second)
+	session := &models.AgentSession{
+		ProjectID:         p.ID,
+		Branch:            "feature/new-fields",
+		WorktreePath:      "/tmp/sess-proj-wt",
+		Status:            models.SessionStatusActive,
+		LastCommitHash:    "deadbeef",
+		LastCommitMessage: "fix: resolve issue",
+		LastActiveAt:      &lastActive,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, session))
+	assert.NotEmpty(t, session.ID)
+
+	// Retrieve and verify round-trip
+	got, err := s.GetAgentSession(ctx, session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "deadbeef", got.LastCommitHash)
+	assert.Equal(t, "fix: resolve issue", got.LastCommitMessage)
+	require.NotNil(t, got.LastActiveAt)
+	assert.Equal(t, lastActive.Unix(), got.LastActiveAt.Unix())
+
+	// Update LastCommitHash and verify
+	got.LastCommitHash = "cafebabe"
+	require.NoError(t, s.UpdateAgentSession(ctx, got))
+
+	got2, err := s.GetAgentSession(ctx, session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "cafebabe", got2.LastCommitHash)
+	assert.Equal(t, "fix: resolve issue", got2.LastCommitMessage)
+	require.NotNil(t, got2.LastActiveAt)
+}
+
 func TestListIssues_SortedByStatusThenPriority(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

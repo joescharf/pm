@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -58,6 +59,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/status/{id}", s.statusProject)
 
 	mux.HandleFunc("GET /api/v1/sessions", s.listSessions)
+	mux.HandleFunc("GET /api/v1/sessions/{id}", s.getSession)
 
 	mux.HandleFunc("GET /api/v1/tags", s.listTags)
 
@@ -379,6 +381,21 @@ func (s *Server) buildStatusEntry(ctx context.Context, p *models.Project) status
 
 // --- Sessions ---
 
+type sessionResponse struct {
+	*models.AgentSession
+	ProjectName string `json:"ProjectName"`
+}
+
+type sessionDetailResponse struct {
+	*models.AgentSession
+	ProjectName    string `json:"ProjectName"`
+	WorktreeExists bool   `json:"WorktreeExists"`
+	IsDirty        bool   `json:"IsDirty,omitempty"`
+	CurrentBranch  string `json:"CurrentBranch,omitempty"`
+	AheadCount     int    `json:"AheadCount,omitempty"`
+	BehindCount    int    `json:"BehindCount,omitempty"`
+}
+
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	sessions, err := s.store.ListAgentSessions(r.Context(), projectID, 50)
@@ -387,7 +404,67 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agent.ReconcileSessions(r.Context(), s.store, sessions)
-	writeJSON(w, http.StatusOK, sessions)
+
+	// Build enriched responses with project names (cached by project ID)
+	nameCache := make(map[string]string)
+	result := make([]sessionResponse, 0, len(sessions))
+	for _, sess := range sessions {
+		name, ok := nameCache[sess.ProjectID]
+		if !ok {
+			if p, err := s.store.GetProject(r.Context(), sess.ProjectID); err == nil {
+				name = p.Name
+			}
+			nameCache[sess.ProjectID] = name
+		}
+		result = append(result, sessionResponse{
+			AgentSession: sess,
+			ProjectName:  name,
+		})
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sess, err := s.store.GetAgentSession(r.Context(), id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Resolve project name
+	var projectName string
+	if p, err := s.store.GetProject(r.Context(), sess.ProjectID); err == nil {
+		projectName = p.Name
+	}
+
+	resp := sessionDetailResponse{
+		AgentSession: sess,
+		ProjectName:  projectName,
+	}
+
+	// Check if worktree path exists
+	if _, err := os.Stat(sess.WorktreePath); err == nil {
+		resp.WorktreeExists = true
+
+		// Enrich with git info from the worktree
+		if dirty, err := s.git.IsDirty(sess.WorktreePath); err == nil {
+			resp.IsDirty = dirty
+		}
+		if branch, err := s.git.CurrentBranch(sess.WorktreePath); err == nil {
+			resp.CurrentBranch = branch
+		}
+		if ahead, behind, err := s.git.AheadBehind(sess.WorktreePath, "main"); err == nil {
+			resp.AheadCount = ahead
+			resp.BehindCount = behind
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // --- Tags ---
@@ -521,6 +598,8 @@ func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
 	for _, sess := range existingSessions {
 		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
 			sess.Status = models.SessionStatusActive
+			now := time.Now().UTC()
+			sess.LastActiveAt = &now
 			if err := s.store.UpdateAgentSession(ctx, sess); err == nil {
 				var issueRefs []string
 				for _, issue := range issues {
@@ -651,6 +730,12 @@ func (s *Server) closeAgent(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid status: %s", req.Status))
 		return
+	}
+
+	// Enrich session with git info before closing
+	if sess, err := s.store.GetAgentSession(r.Context(), req.SessionID); err == nil {
+		agent.EnrichSessionWithGitInfo(sess, s.git)
+		_ = s.store.UpdateAgentSession(r.Context(), sess)
 	}
 
 	session, err := agent.CloseSession(r.Context(), s.store, req.SessionID, target)

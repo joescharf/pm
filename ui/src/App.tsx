@@ -8,6 +8,7 @@ import { ProjectDetail } from "@/components/projects/project-detail";
 import { IssuesPage } from "@/components/issues/issues-page";
 import { IssueDetail } from "@/components/issues/issue-detail";
 import { SessionsPage } from "@/components/sessions/sessions-page";
+import { SessionDetail } from "@/components/sessions/session-detail";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -31,6 +32,7 @@ export function App() {
             <Route path="issues" element={<IssuesPage />} />
             <Route path="issues/:id" element={<IssueDetail />} />
             <Route path="sessions" element={<SessionsPage />} />
+            <Route path="sessions/:id" element={<SessionDetail />} />
           </Route>
         </Routes>
       </BrowserRouter>

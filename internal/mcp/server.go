@@ -186,13 +186,15 @@ func (s *Server) handleProjectStatus(ctx context.Context, request mcp.CallToolRe
 
 	result := map[string]any{
 		"project": map[string]any{
-			"id":          p.ID,
-			"name":        p.Name,
-			"path":        p.Path,
-			"description": p.Description,
-			"language":    p.Language,
-			"group":       p.GroupName,
-			"repo_url":    p.RepoURL,
+			"id":               p.ID,
+			"name":             p.Name,
+			"path":             p.Path,
+			"description":      p.Description,
+			"language":         p.Language,
+			"group":            p.GroupName,
+			"repo_url":         p.RepoURL,
+			"has_github_pages": p.HasGitHubPages,
+			"pages_url":        p.PagesURL,
 		},
 		"git": map[string]any{
 			"branch":          branch,
@@ -569,6 +571,8 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 	for _, sess := range existingSessions {
 		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
 			sess.Status = models.SessionStatusActive
+			now := time.Now().UTC()
+			sess.LastActiveAt = &now
 			if err := s.store.UpdateAgentSession(ctx, sess); err == nil {
 				command := fmt.Sprintf("cd %s && claude", sess.WorktreePath)
 				if issueID != "" {
@@ -665,6 +669,12 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 	case models.SessionStatusIdle, models.SessionStatusCompleted, models.SessionStatusAbandoned:
 	default:
 		return mcp.NewToolResultError(fmt.Sprintf("invalid status: %s (must be idle, completed, or abandoned)", targetStr)), nil
+	}
+
+	// Enrich session with git info before closing
+	if sess, err := s.store.GetAgentSession(ctx, sessionID); err == nil {
+		agent.EnrichSessionWithGitInfo(sess, s.git)
+		_ = s.store.UpdateAgentSession(ctx, sess)
 	}
 
 	session, err := agent.CloseSession(ctx, s.store, sessionID, target)

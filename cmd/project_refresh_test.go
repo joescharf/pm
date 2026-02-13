@@ -34,10 +34,13 @@ func (m *mockGitClient) WorktreeList(path string) ([]git.WorktreeInfo, error) {
 }
 func (m *mockGitClient) RemoteURL(path string) (string, error) { return m.remoteURL, nil }
 func (m *mockGitClient) LatestTag(path string) (string, error) { return "", nil }
+func (m *mockGitClient) CommitCountSince(path, base string) (int, error) { return 0, nil }
+func (m *mockGitClient) AheadBehind(path, base string) (int, int, error) { return 0, 0, nil }
 
 // mockGitHubClient implements git.GitHubClient for testing.
 type mockGitHubClient struct {
-	repoInfo *git.RepoInfo
+	repoInfo  *git.RepoInfo
+	pagesInfo *git.PagesResult
 }
 
 func (m *mockGitHubClient) LatestRelease(owner, repo string) (*git.Release, error) {
@@ -49,6 +52,12 @@ func (m *mockGitHubClient) OpenPRs(owner, repo string) ([]git.PullRequest, error
 func (m *mockGitHubClient) RepoInfo(owner, repo string) (*git.RepoInfo, error) {
 	if m.repoInfo != nil {
 		return m.repoInfo, nil
+	}
+	return nil, nil
+}
+func (m *mockGitHubClient) PagesInfo(owner, repo string) (*git.PagesResult, error) {
+	if m.pagesInfo != nil {
+		return m.pagesInfo, nil
 	}
 	return nil, nil
 }
@@ -140,7 +149,7 @@ func TestRefreshProject_FillsEmptyDescription(t *testing.T) {
 	assert.Equal(t, "A cool project", p.Description)
 }
 
-func TestRefreshProject_DoesNotOverwriteDescription(t *testing.T) {
+func TestRefreshProject_SyncsDescriptionFromGitHub(t *testing.T) {
 	s := refreshTestEnv(t)
 	ctx := context.Background()
 
@@ -159,8 +168,8 @@ func TestRefreshProject_DoesNotOverwriteDescription(t *testing.T) {
 
 	changed, err := refreshProject(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
-	assert.False(t, changed)
-	assert.Equal(t, "My custom description", p.Description)
+	assert.True(t, changed)
+	assert.Equal(t, "GitHub description", p.Description)
 }
 
 func TestRefreshProject_NoChanges(t *testing.T) {
@@ -171,6 +180,7 @@ func TestRefreshProject_NoChanges(t *testing.T) {
 		Name:        "test",
 		Path:        t.TempDir(),
 		Description: "existing",
+		BranchCount: 1, // matches mock's BranchList return of ["main"]
 	}
 	require.NoError(t, s.CreateProject(ctx, p))
 
@@ -202,4 +212,33 @@ func TestRefreshProject_GitHubLanguageFallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Equal(t, "Rust", p.Language)
+}
+
+func TestRefreshProject_DetectsGitHubPages(t *testing.T) {
+	s := refreshTestEnv(t)
+	ctx := context.Background()
+
+	p := &models.Project{
+		Name:    "test",
+		Path:    t.TempDir(),
+		RepoURL: "https://github.com/owner/repo",
+	}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	gc := &mockGitClient{remoteURL: "https://github.com/owner/repo"}
+	ghc := &mockGitHubClient{
+		pagesInfo: &git.PagesResult{URL: "https://test.github.io"},
+	}
+
+	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.True(t, p.HasGitHubPages)
+	assert.Equal(t, "https://test.github.io", p.PagesURL)
+
+	// Verify persisted
+	got, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	assert.True(t, got.HasGitHubPages)
+	assert.Equal(t, "https://test.github.io", got.PagesURL)
 }

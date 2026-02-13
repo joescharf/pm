@@ -55,6 +55,14 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	return &SQLiteStore{db: db}, nil
 }
 
+// boolToInt converts a bool to 0 or 1 for SQLite storage.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // newULID generates a new ULID string.
 func newULID() string {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -132,9 +140,10 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, p *models.Project) erro
 	p.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, path, description, repo_url, language, group_name, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Path, p.Description, p.RepoURL, p.Language, p.GroupName, p.CreatedAt, p.UpdatedAt,
+		`INSERT INTO projects (id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Path, p.Description, p.RepoURL, p.Language, p.GroupName,
+		p.BranchCount, boolToInt(p.HasGitHubPages), p.PagesURL, p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
@@ -145,9 +154,9 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, p *models.Project) erro
 func (s *SQLiteStore) GetProject(ctx context.Context, id string) (*models.Project, error) {
 	p := &models.Project{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, path, description, repo_url, language, group_name, created_at, updated_at
+		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
 		FROM projects WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("project not found: %s", id)
 	}
@@ -160,9 +169,9 @@ func (s *SQLiteStore) GetProject(ctx context.Context, id string) (*models.Projec
 func (s *SQLiteStore) GetProjectByName(ctx context.Context, name string) (*models.Project, error) {
 	p := &models.Project{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, path, description, repo_url, language, group_name, created_at, updated_at
+		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
 		FROM projects WHERE name = ?`, name,
-	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("project not found: %s", name)
 	}
@@ -175,9 +184,9 @@ func (s *SQLiteStore) GetProjectByName(ctx context.Context, name string) (*model
 func (s *SQLiteStore) GetProjectByPath(ctx context.Context, path string) (*models.Project, error) {
 	p := &models.Project{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, path, description, repo_url, language, group_name, created_at, updated_at
+		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
 		FROM projects WHERE path = ?`, path,
-	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("project not found at path: %s", path)
 	}
@@ -192,11 +201,11 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, group string) ([]*models
 	var err error
 	if group != "" {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, name, path, description, repo_url, language, group_name, created_at, updated_at
+			`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
 			FROM projects WHERE group_name = ? ORDER BY name`, group)
 	} else {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, name, path, description, repo_url, language, group_name, created_at, updated_at
+			`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
 			FROM projects ORDER BY name`)
 	}
 	if err != nil {
@@ -207,7 +216,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, group string) ([]*models
 	var projects []*models.Project
 	for rows.Next() {
 		p := &models.Project{}
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -218,9 +227,10 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, group string) ([]*models
 func (s *SQLiteStore) UpdateProject(ctx context.Context, p *models.Project) error {
 	p.UpdatedAt = time.Now().UTC()
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE projects SET name=?, path=?, description=?, repo_url=?, language=?, group_name=?, updated_at=?
+		`UPDATE projects SET name=?, path=?, description=?, repo_url=?, language=?, group_name=?, branch_count=?, has_github_pages=?, pages_url=?, updated_at=?
 		WHERE id=?`,
-		p.Name, p.Path, p.Description, p.RepoURL, p.Language, p.GroupName, p.UpdatedAt, p.ID,
+		p.Name, p.Path, p.Description, p.RepoURL, p.Language, p.GroupName,
+		p.BranchCount, boolToInt(p.HasGitHubPages), p.PagesURL, p.UpdatedAt, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
@@ -495,11 +505,12 @@ func (s *SQLiteStore) CreateAgentSession(ctx context.Context, session *models.Ag
 	session.StartedAt = time.Now().UTC()
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO agent_sessions (id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, started_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO agent_sessions (id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.ID, session.ProjectID, session.IssueID, session.Branch,
 		session.WorktreePath, string(session.Status), session.Outcome,
-		session.CommitCount, session.StartedAt,
+		session.CommitCount, session.LastCommitHash, session.LastCommitMessage,
+		session.LastActiveAt, session.StartedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("create agent session: %w", err)
@@ -510,14 +521,16 @@ func (s *SQLiteStore) CreateAgentSession(ctx context.Context, session *models.Ag
 func (s *SQLiteStore) GetAgentSession(ctx context.Context, id string) (*models.AgentSession, error) {
 	session := &models.AgentSession{}
 	var status string
-	var endedAt sql.NullTime
+	var endedAt, lastActiveAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, started_at, ended_at
+		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at
 		FROM agent_sessions WHERE id = ?`, id,
 	).Scan(&session.ID, &session.ProjectID, &session.IssueID,
 		&session.Branch, &session.WorktreePath, &status,
-		&session.Outcome, &session.CommitCount, &session.StartedAt, &endedAt)
+		&session.Outcome, &session.CommitCount,
+		&session.LastCommitHash, &session.LastCommitMessage, &lastActiveAt,
+		&session.StartedAt, &endedAt)
 	if err != nil {
 		return nil, fmt.Errorf("agent session not found: %s", id)
 	}
@@ -526,21 +539,26 @@ func (s *SQLiteStore) GetAgentSession(ctx context.Context, id string) (*models.A
 	if endedAt.Valid {
 		session.EndedAt = &endedAt.Time
 	}
+	if lastActiveAt.Valid {
+		session.LastActiveAt = &lastActiveAt.Time
+	}
 	return session, nil
 }
 
 func (s *SQLiteStore) GetAgentSessionByWorktreePath(ctx context.Context, path string) (*models.AgentSession, error) {
 	session := &models.AgentSession{}
 	var status string
-	var endedAt sql.NullTime
+	var endedAt, lastActiveAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, started_at, ended_at
+		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at
 		FROM agent_sessions WHERE worktree_path = ? AND status IN ('active', 'idle')
 		ORDER BY started_at DESC LIMIT 1`, path,
 	).Scan(&session.ID, &session.ProjectID, &session.IssueID,
 		&session.Branch, &session.WorktreePath, &status,
-		&session.Outcome, &session.CommitCount, &session.StartedAt, &endedAt)
+		&session.Outcome, &session.CommitCount,
+		&session.LastCommitHash, &session.LastCommitMessage, &lastActiveAt,
+		&session.StartedAt, &endedAt)
 	if err != nil {
 		return nil, fmt.Errorf("no active/idle session for worktree: %s", path)
 	}
@@ -549,11 +567,14 @@ func (s *SQLiteStore) GetAgentSessionByWorktreePath(ctx context.Context, path st
 	if endedAt.Valid {
 		session.EndedAt = &endedAt.Time
 	}
+	if lastActiveAt.Valid {
+		session.LastActiveAt = &lastActiveAt.Time
+	}
 	return session, nil
 }
 
 func (s *SQLiteStore) ListAgentSessions(ctx context.Context, projectID string, limit int) ([]*models.AgentSession, error) {
-	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, started_at, ended_at
+	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at
 		FROM agent_sessions`
 	var args []any
 
@@ -577,17 +598,22 @@ func (s *SQLiteStore) ListAgentSessions(ctx context.Context, projectID string, l
 	for rows.Next() {
 		session := &models.AgentSession{}
 		var status string
-		var endedAt sql.NullTime
+		var endedAt, lastActiveAt sql.NullTime
 
 		if err := rows.Scan(&session.ID, &session.ProjectID, &session.IssueID,
 			&session.Branch, &session.WorktreePath, &status,
-			&session.Outcome, &session.CommitCount, &session.StartedAt, &endedAt); err != nil {
+			&session.Outcome, &session.CommitCount,
+			&session.LastCommitHash, &session.LastCommitMessage, &lastActiveAt,
+			&session.StartedAt, &endedAt); err != nil {
 			return nil, fmt.Errorf("scan agent session: %w", err)
 		}
 
 		session.Status = models.SessionStatus(status)
 		if endedAt.Valid {
 			session.EndedAt = &endedAt.Time
+		}
+		if lastActiveAt.Valid {
+			session.LastActiveAt = &lastActiveAt.Time
 		}
 		sessions = append(sessions, session)
 	}
@@ -596,8 +622,10 @@ func (s *SQLiteStore) ListAgentSessions(ctx context.Context, projectID string, l
 
 func (s *SQLiteStore) UpdateAgentSession(ctx context.Context, session *models.AgentSession) error {
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE agent_sessions SET status=?, outcome=?, commit_count=?, ended_at=? WHERE id=?`,
-		string(session.Status), session.Outcome, session.CommitCount, session.EndedAt, session.ID,
+		`UPDATE agent_sessions SET status=?, outcome=?, commit_count=?, last_commit_hash=?, last_commit_message=?, last_active_at=?, ended_at=? WHERE id=?`,
+		string(session.Status), session.Outcome, session.CommitCount,
+		session.LastCommitHash, session.LastCommitMessage, session.LastActiveAt,
+		session.EndedAt, session.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update agent session: %w", err)

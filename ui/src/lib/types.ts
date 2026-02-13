@@ -8,6 +8,9 @@ export interface Project {
   RepoURL: string;
   Language: string;
   GroupName: string;
+  BranchCount: number;
+  HasGitHubPages: boolean;
+  PagesURL: string;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -42,8 +45,21 @@ export interface AgentSession {
   Status: SessionStatus;
   Outcome: string;
   CommitCount: number;
+  LastCommitHash: string;
+  LastCommitMessage: string;
+  LastActiveAt: string | null;
+  ProjectName?: string;
   StartedAt: string;
   EndedAt: string | null;
+}
+
+export interface SessionDetail extends AgentSession {
+  ProjectName: string;
+  WorktreeExists: boolean;
+  IsDirty?: boolean;
+  CurrentBranch?: string;
+  AheadCount?: number;
+  BehindCount?: number;
 }
 
 export interface Tag {

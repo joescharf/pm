@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router";
 import { useSessions } from "@/hooks/use-sessions";
 import { useCloseAgent } from "@/hooks/use-agent";
 import {
@@ -44,6 +45,7 @@ function formatDuration(start: string, end: string | null): string {
 }
 
 export function SessionsPage() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useSessions();
   const sessions = data ?? [];
   const closeAgent = useCloseAgent();
@@ -83,6 +85,7 @@ export function SessionsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Branch</TableHead>
+              <TableHead>Project</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Outcome</TableHead>
               <TableHead className="text-center">Commits</TableHead>
@@ -93,9 +96,16 @@ export function SessionsPage() {
           </TableHeader>
           <TableBody>
             {sessions.map((s) => (
-              <TableRow key={s.ID}>
+              <TableRow
+                key={s.ID}
+                className="cursor-pointer"
+                onClick={() => navigate(`/sessions/${s.ID}`)}
+              >
                 <TableCell className="font-mono text-xs">
-                  {s.Branch || "—"}
+                  {s.Branch || "\u2014"}
+                </TableCell>
+                <TableCell className="text-sm">
+                  {s.ProjectName || "\u2014"}
                 </TableCell>
                 <TableCell>
                   <Badge
@@ -106,7 +116,7 @@ export function SessionsPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-sm max-w-[200px] truncate">
-                  {s.Outcome || "—"}
+                  {s.Outcome || "\u2014"}
                 </TableCell>
                 <TableCell className="text-center">{s.CommitCount}</TableCell>
                 <TableCell className="text-xs">
@@ -120,7 +130,10 @@ export function SessionsPage() {
                 </TableCell>
                 <TableCell>
                   {(s.Status === "active" || s.Status === "idle") && (
-                    <div className="flex items-center gap-1">
+                    <div
+                      className="flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {s.Status === "active" && (
                         <Button
                           variant="outline"

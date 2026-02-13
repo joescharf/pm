@@ -14,14 +14,17 @@ const (
 
 // AgentSession represents a Claude Code agent session tied to a project and issue.
 type AgentSession struct {
-	ID           string
-	ProjectID    string
-	IssueID      string
-	Branch       string
-	WorktreePath string
-	Status       SessionStatus
-	Outcome      string
-	CommitCount  int
-	StartedAt    time.Time
-	EndedAt      *time.Time
+	ID                string
+	ProjectID         string
+	IssueID           string
+	Branch            string
+	WorktreePath      string
+	Status            SessionStatus
+	Outcome           string
+	CommitCount       int
+	LastCommitHash    string
+	LastCommitMessage string
+	LastActiveAt      *time.Time
+	StartedAt         time.Time
+	EndedAt           *time.Time
 }

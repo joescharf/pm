@@ -3,6 +3,7 @@ package git
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,8 @@ type Client interface {
 	WorktreeList(path string) ([]WorktreeInfo, error)
 	RemoteURL(path string) (string, error)
 	LatestTag(path string) (string, error)
+	CommitCountSince(path, base string) (int, error)
+	AheadBehind(path, base string) (ahead int, behind int, err error)
 }
 
 // RealClient implements Client using real git commands.
@@ -116,6 +119,34 @@ func (c *RealClient) RemoteURL(path string) (string, error) {
 
 func (c *RealClient) LatestTag(path string) (string, error) {
 	return gitCmd(path, "describe", "--tags", "--abbrev=0")
+}
+
+func (c *RealClient) CommitCountSince(path, base string) (int, error) {
+	out, err := gitCmd(path, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(out)
+}
+
+func (c *RealClient) AheadBehind(path, base string) (ahead int, behind int, err error) {
+	out, err := gitCmd(path, "rev-list", "--left-right", "--count", base+"...HEAD")
+	if err != nil {
+		return 0, 0, err
+	}
+	parts := strings.Fields(out)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected rev-list output: %s", out)
+	}
+	behind, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse behind count: %w", err)
+	}
+	ahead, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse ahead count: %w", err)
+	}
+	return ahead, behind, nil
 }
 
 // ParseWorktreeListPorcelain parses the output of `git worktree list --porcelain`.

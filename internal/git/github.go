@@ -41,11 +41,17 @@ type RepoInfo struct {
 	URL         string `json:"url"`
 }
 
+// PagesResult holds GitHub Pages configuration status.
+type PagesResult struct {
+	URL string `json:"html_url"`
+}
+
 // GitHubClient wraps the gh CLI for GitHub metadata.
 type GitHubClient interface {
 	LatestRelease(owner, repo string) (*Release, error)
 	OpenPRs(owner, repo string) ([]PullRequest, error)
 	RepoInfo(owner, repo string) (*RepoInfo, error)
+	PagesInfo(owner, repo string) (*PagesResult, error)
 }
 
 // RealGitHubClient implements GitHubClient using the gh CLI.
@@ -109,6 +115,23 @@ type repoInfoRaw struct {
 	} `json:"primaryLanguage"`
 	IsPrivate bool   `json:"isPrivate"`
 	URL       string `json:"url"`
+}
+
+func (c *RealGitHubClient) PagesInfo(owner, repo string) (*PagesResult, error) {
+	out, err := ghCmd("api", fmt.Sprintf("repos/%s/%s/pages", owner, repo))
+	if err != nil {
+		// 404 means no pages configured — not an error
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "Not Found") {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var result PagesResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		return nil, fmt.Errorf("parse pages info: %w", err)
+	}
+	return &result, nil
 }
 
 func (c *RealGitHubClient) RepoInfo(owner, repo string) (*RepoInfo, error) {

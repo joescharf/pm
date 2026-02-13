@@ -253,6 +253,12 @@ func projectShowRun(name string) error {
 	if p.RepoURL != "" {
 		fmt.Fprintf(ui.Out, "  Remote:     %s\n", p.RepoURL)
 	}
+	if p.BranchCount > 0 {
+		fmt.Fprintf(ui.Out, "  Branches:   %d\n", p.BranchCount)
+	}
+	if p.HasGitHubPages {
+		fmt.Fprintf(ui.Out, "  Pages:      %s\n", p.PagesURL)
+	}
 	fmt.Fprintln(ui.Out)
 
 	// Git info
@@ -504,13 +510,23 @@ func refreshProject(ctx context.Context, s store.Store, p *models.Project, gc gi
 		changed = true
 	}
 
+	// Update branch count
+	if branches, err := gc.BranchList(p.Path); err == nil {
+		count := len(branches)
+		if count != p.BranchCount {
+			ui.VerboseLog("BranchCount: %d -> %d", p.BranchCount, count)
+			p.BranchCount = count
+			changed = true
+		}
+	}
+
 	// Fetch GitHub metadata if we have a repo URL
 	if p.RepoURL != "" {
 		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
 			if info, err := ghc.RepoInfo(owner, repo); err == nil && info != nil {
-				// Fill description only if currently empty
-				if p.Description == "" && info.Description != "" {
-					ui.VerboseLog("Description: (empty) -> %s", info.Description)
+				// Always sync description from GitHub if it has changed
+				if info.Description != "" && info.Description != p.Description {
+					ui.VerboseLog("Description: %q -> %q", p.Description, info.Description)
 					p.Description = info.Description
 					changed = true
 				}
@@ -520,6 +536,22 @@ func refreshProject(ctx context.Context, s store.Store, p *models.Project, gc gi
 					p.Language = info.Language
 					changed = true
 				}
+			}
+
+			// Check GitHub Pages configuration
+			if pages, err := ghc.PagesInfo(owner, repo); err == nil && pages != nil {
+				if !p.HasGitHubPages || p.PagesURL != pages.URL {
+					ui.VerboseLog("GitHub Pages: %s", pages.URL)
+					p.HasGitHubPages = true
+					p.PagesURL = pages.URL
+					changed = true
+				}
+			} else if p.HasGitHubPages {
+				// Pages was removed
+				ui.VerboseLog("GitHub Pages: disabled")
+				p.HasGitHubPages = false
+				p.PagesURL = ""
+				changed = true
 			}
 		}
 	}

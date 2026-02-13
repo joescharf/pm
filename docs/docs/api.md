@@ -108,13 +108,50 @@ When creating an issue, unspecified fields default to: `status: "open"`, `priori
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/v1/sessions` | List agent sessions |
+| `GET` | `/api/v1/sessions` | List agent sessions (enriched with project name) |
+| `GET` | `/api/v1/sessions/{id}` | Get session detail with live git state |
+| `POST` | `/api/v1/agent/launch` | Launch or resume an agent session |
+| `POST` | `/api/v1/agent/close` | Close an agent session |
 
-**Query parameters:**
+**Query parameters for `GET /api/v1/sessions`:**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `project_id` | string | Filter by project ID |
+
+**Session list response** includes `ProjectName` resolved from the project ID.
+
+**Session detail response** (`GET /api/v1/sessions/{id}`) includes live worktree state:
+
+```json
+{
+  "ID": "01J5ABCD...",
+  "ProjectID": "...",
+  "ProjectName": "my-api",
+  "Branch": "feature/add-auth",
+  "Status": "idle",
+  "CommitCount": 5,
+  "LastCommitHash": "abc1234",
+  "LastCommitMessage": "feat: add login endpoint",
+  "LastActiveAt": "2026-02-13T04:30:00Z",
+  "WorktreeExists": true,
+  "IsDirty": false,
+  "CurrentBranch": "feature/add-auth",
+  "AheadCount": 3,
+  "BehindCount": 0
+}
+```
+
+**Close agent request** (`POST /api/v1/agent/close`):
+
+```json
+{
+  "session_id": "01J5ABCD...",
+  "status": "completed"
+}
+```
+
+Valid status values: `idle` (default), `completed`, `abandoned`.
 
 ### Tags
 
