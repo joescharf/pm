@@ -3,20 +3,25 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/joescharf/pm/internal/agent"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
 )
 
 var (
-	agentIssue  string
-	agentBranch string
-	agentLimit  int
+	agentIssue   string
+	agentBranch  string
+	agentLimit   int
+	closeDone    bool
+	closeAbandon bool
 )
 
 var agentCmd = &cobra.Command{
@@ -64,15 +69,38 @@ var agentHistoryCmd = &cobra.Command{
 	},
 }
 
+var agentCloseCmd = &cobra.Command{
+	Use:   "close [session_id]",
+	Short: "Close an agent session",
+	Long: `Close an agent session. Default transitions to idle (worktree preserved).
+Use --done to mark completed (issues → done) or --abandon to abandon (issues → open).
+
+When no session_id is given:
+  - In a worktree directory: closes the session for that worktree
+  - In a project directory: lists active/idle sessions to choose from`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var sessionRef string
+		if len(args) > 0 {
+			sessionRef = args[0]
+		}
+		return agentCloseRun(sessionRef)
+	},
+}
+
 func init() {
 	agentLaunchCmd.Flags().StringVar(&agentIssue, "issue", "", "Issue ID to work on")
 	agentLaunchCmd.Flags().StringVar(&agentBranch, "branch", "", "Branch name (auto-generated from issue if not specified)")
 
 	agentHistoryCmd.Flags().IntVar(&agentLimit, "limit", 20, "Max sessions to show")
 
+	agentCloseCmd.Flags().BoolVar(&closeDone, "done", false, "Mark session as completed (issues → done)")
+	agentCloseCmd.Flags().BoolVar(&closeAbandon, "abandon", false, "Mark session as abandoned (issues → open)")
+
 	agentCmd.AddCommand(agentLaunchCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentHistoryCmd)
+	agentCmd.AddCommand(agentCloseCmd)
 	rootCmd.AddCommand(agentCmd)
 }
 
@@ -256,6 +284,92 @@ func agentHistoryRun(projectRef string) error {
 	}
 	table.Render()
 	return nil
+}
+
+func agentCloseRun(sessionRef string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	// Determine target status
+	target := models.SessionStatusIdle
+	if closeDone {
+		target = models.SessionStatusCompleted
+	} else if closeAbandon {
+		target = models.SessionStatusAbandoned
+	}
+
+	// Resolve session ID
+	sessionID := sessionRef
+	if sessionID == "" {
+		sessionID, err = resolveSessionFromCwd(ctx, s)
+		if err != nil {
+			return err
+		}
+	}
+
+	session, err := agent.CloseSession(ctx, s, sessionID, target)
+	if err != nil {
+		return err
+	}
+
+	ui.Success("Session %s → %s", output.Cyan(shortID(session.ID)), output.Cyan(string(session.Status)))
+	return nil
+}
+
+func resolveSessionFromCwd(ctx context.Context, s store.Store) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory: %w", err)
+	}
+
+	// Try matching cwd as a worktree path
+	session, err := s.GetAgentSessionByWorktreePath(ctx, cwd)
+	if err == nil {
+		return session.ID, nil
+	}
+
+	// Try matching cwd as a project directory
+	p, err := s.GetProjectByPath(ctx, cwd)
+	if err != nil {
+		return "", fmt.Errorf("no session found for current directory; specify a session ID")
+	}
+
+	// List active/idle sessions for this project
+	sessions, err := s.ListAgentSessions(ctx, p.ID, 0)
+	if err != nil {
+		return "", err
+	}
+
+	var live []*models.AgentSession
+	for _, sess := range sessions {
+		if sess.Status == models.SessionStatusActive || sess.Status == models.SessionStatusIdle {
+			live = append(live, sess)
+		}
+	}
+
+	if len(live) == 0 {
+		return "", fmt.Errorf("no active/idle sessions for project %s", p.Name)
+	}
+	if len(live) == 1 {
+		return live[0].ID, nil
+	}
+
+	// Multiple sessions — list them for the user
+	fmt.Println("Multiple active sessions. Specify a session ID:")
+	table := ui.Table([]string{"ID", "Branch", "Status", "Started"})
+	for _, sess := range live {
+		table.Append([]string{
+			shortID(sess.ID),
+			sess.Branch,
+			string(sess.Status),
+			timeAgo(sess.StartedAt),
+		})
+	}
+	table.Render()
+	return "", fmt.Errorf("ambiguous: multiple sessions found")
 }
 
 // issueToBranch converts an issue title to a branch name.
