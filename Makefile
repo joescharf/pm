@@ -64,7 +64,7 @@ release: ## Create a release with goreleaser
 	goreleaser release --clean
 
 release-snapshot: ## Create a snapshot release (no publish)
-	goreleaser release --snapshot --clean --skip homebrew,docker
+	goreleaser release --snapshot --clean --skip docker,homebrew
 
 ##@ Docs (mkdocs-material via uv)
 .PHONY: docs-serve docs-build docs-deps

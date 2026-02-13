@@ -1,96 +1,42 @@
-# goreleaser release --clean --verbose
-# goreleaser release --snapshot --clean --skip homebrew,docker
-
-project_name: pm
 version: 2
 
 before:
   hooks:
-    - go mod download
+    - sh -c "cd ui && bun install --frozen-lockfile"
+    - sh -c "cd ui && bun run build"
+    - sh -c "rm -rf internal/ui/dist/assets && cp -r ui/dist/* internal/ui/dist/"
 
 builds:
-  - id: pm
-    binary: pm
-    dir: .
-    main: main.go
-    env:
+  - env:
       - CGO_ENABLED=0
     goos:
       - linux
+      - darwin
+      - windows
     goarch:
       - amd64
       - arm64
     ldflags:
-      - -X github.com/joescharf/pm/cmd.version={{ .Version }}
-      - -X github.com/joescharf/pm/cmd.commit={{ .Commit }}
-      - -X github.com/joescharf/pm/cmd.date={{ .Date }}
-
-  - id: pm-macos
-    binary: pm
-    dir: .
-    main: main.go
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - darwin
-    goarch:
-      - amd64
-    ldflags:
-      - -X github.com/joescharf/pm/cmd.version={{ .Version }}
-      - -X github.com/joescharf/pm/cmd.commit={{ .Commit }}
-      - -X github.com/joescharf/pm/cmd.date={{ .Date }}
-
-# MacOS Universal Binaries
-universal_binaries:
-  - id: pm-macos
-    replace: true
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
 
 archives:
-  - id: pm-linux-archive
-    ids:
-      - pm
-
-  - id: pm-archive
-    ids:
-      - pm-macos
-    formats:
-      - zip
+  - formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     files:
-      - none*
+      - README.md
 
 checksum:
   name_template: "checksums.txt"
 
-release:
-  github:
-    owner: joescharf
-    name: pm
-  ids:
-    - pm-archive
-    - pm-linux-archive
-  draft: true
-  replace_existing_draft: true
-
 snapshot:
-  version_template: "{{ incpatch .Version }}-devel"
-
-# Uncomment and configure for Homebrew distribution:
-# homebrew_casks:
-#   - name: pm
-#     ids:
-#       - pm-archive
-#     binaries:
-#       - pm
-#     repository:
-#       owner: joescharf
-#       name: homebrew-tap
-#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-#     skip_upload: auto
-#     commit_author:
-#       name: releaserbot
-#       email: you@example.com
-#     homepage: "https://github.com/joescharf/pm"
-#     description: "Description of pm"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
@@ -107,18 +53,22 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
+      - "^ci:"
+      - "^chore:"
 
-# Multi-platform Docker images
+homebrew_casks:
+  - name: pm
+    repository:
+      owner: joescharf
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/joescharf/pm
+    description: "Project manager CLI — track projects, issues, and agent sessions from a single binary."
+
 dockers_v2:
   - images:
       - "ghcr.io/joescharf/pm"
     tags:
       - "v{{ .Version }}"
-      - "latest"
-    labels:
-      "org.opencontainers.image.title": "{{ .ProjectName }}"
-      "org.opencontainers.image.description": "{{ .ProjectName }}"
-      "org.opencontainers.image.url": "https://github.com/joescharf/{{ .ProjectName }}"
-      "org.opencontainers.image.source": "https://github.com/joescharf/{{ .ProjectName }}"
-      "org.opencontainers.image.version": "{{ .Version }}"
-      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      - latest

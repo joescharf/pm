@@ -1,7 +1,9 @@
 site_name: pm Documentation
-site_url: https://pm.example.com
+site_url: https://joescharf.github.io/pm/
 site_description: "pm documentation"
-edit_uri: ""
+repo_url: https://github.com/joescharf/pm
+repo_name: joescharf/pm
+edit_uri: edit/main/docs/docs/
 
 extra_css:
   - stylesheets/extra.css
