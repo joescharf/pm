@@ -72,6 +72,18 @@ archives:
     name_template: "{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch \"amd64\" }}x86_64{{ else }}{{ .Arch }}{{ end }}"
     files: [README.md]
 
+signs:
+  - id: notarize-macos-zip
+    cmd: sh
+    args:
+      - -c
+      - 'xcrun notarytool submit "${artifact}" --keychain-profile SCHARFNADO_LLC --wait && touch "${signature}"'
+    artifacts: archive
+    ids:
+      - pm-macos-archive
+    signature: "${artifact}.notarized"
+    output: true
+
 checksum:
   name_template: "checksums.txt"
 

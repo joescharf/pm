@@ -58,7 +58,7 @@ mocks: ## Generate mocks with mockery
 	mockery
 
 ##@ Release
-.PHONY: release release-local release-snapshot
+.PHONY: release release-snapshot
 
 release: ## Create a release with goreleaser
 	HOMEBREW_TAP_TOKEN=$$(cat ~/.config/goreleaser/homebrew_tap_token) goreleaser release --clean
