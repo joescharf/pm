@@ -693,6 +693,19 @@ func (s *Server) resumeAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Look up project to get repo path for wt open
+	project, err := s.store.GetProject(ctx, sess.ProjectID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "project not found for session")
+		return
+	}
+
+	// Open iTerm window via wt open
+	if err := s.wt.Create(project.Path, sess.Branch); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("wt open: %v", err))
+		return
+	}
+
 	sess.Status = models.SessionStatusActive
 	now := time.Now().UTC()
 	sess.LastActiveAt = &now

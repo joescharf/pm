@@ -147,7 +147,12 @@ func agentLaunchRun(projectRef string) error {
 				ui.DryRunMsg("Would resume session %s for %s on branch %s", shortID(sess.ID), p.Name, branch)
 				return nil
 			}
-			// Resume: reactivate existing session, skip worktree creation
+			// Resume: reactivate existing session, open iTerm window
+			wtClient := wt.NewClient()
+			ui.Info("Opening worktree for branch: %s", output.Cyan(branch))
+			if err := wtClient.Create(p.Path, branch); err != nil {
+				return fmt.Errorf("wt open: %w", err)
+			}
 			sess.Status = models.SessionStatusActive
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now

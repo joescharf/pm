@@ -570,6 +570,12 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 	existingSessions, _ := s.store.ListAgentSessions(ctx, p.ID, 0)
 	for _, sess := range existingSessions {
 		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
+			// Open iTerm window via wt open
+			if s.wt != nil {
+				if err := s.wt.Create(p.Path, branch); err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("wt open: %v", err)), nil
+				}
+			}
 			sess.Status = models.SessionStatusActive
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now
