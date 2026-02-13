@@ -143,6 +143,10 @@ func agentLaunchRun(projectRef string) error {
 	existingSessions, _ := s.ListAgentSessions(ctx, p.ID, 0)
 	for _, sess := range existingSessions {
 		if sess.Branch == branch && sess.Status == models.SessionStatusIdle {
+			if dryRun {
+				ui.DryRunMsg("Would resume session %s for %s on branch %s", shortID(sess.ID), p.Name, branch)
+				return nil
+			}
 			// Resume: reactivate existing session, skip worktree creation
 			sess.Status = models.SessionStatusActive
 			now := time.Now().UTC()
@@ -150,11 +154,12 @@ func agentLaunchRun(projectRef string) error {
 			if err := s.UpdateAgentSession(ctx, sess); err != nil {
 				ui.Warning("Failed to reactivate session: %v", err)
 			} else {
+				resumePath := sess.WorktreePath
 				ui.Success("Resumed session %s for %s on branch %s", output.Cyan(shortID(sess.ID)), output.Cyan(p.Name), output.Cyan(branch))
 				if resolvedIssueID != "" {
-					ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", worktreePath, shortID(resolvedIssueID))
+					ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", resumePath, shortID(resolvedIssueID))
 				} else {
-					ui.Info("Run: cd %s && claude", worktreePath)
+					ui.Info("Run: cd %s && claude", resumePath)
 				}
 				return nil
 			}
