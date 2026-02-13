@@ -58,6 +58,18 @@ pm serve
 
 ## Installation
 
+### Homebrew (macOS)
+
+```bash
+brew install joescharf/tap/pm
+```
+
+The Homebrew cask installs a signed and Apple-notarized universal binary.
+
+### Installer package (macOS)
+
+Download `pm_macos_universal.pkg` from the [latest release](https://github.com/joescharf/pm/releases). The `.pkg` is signed, notarized, and stapled -- double-click to install to `/usr/local/bin/pm`.
+
 ### From source (requires Go 1.22+)
 
 ```bash

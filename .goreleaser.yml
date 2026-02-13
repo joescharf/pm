@@ -1,4 +1,8 @@
 version: 2
+project_name: pm
+
+env_files:
+  github_token: ~/.config/goreleaser/github_token
 
 before:
   hooks:
@@ -7,30 +11,66 @@ before:
     - sh -c "rm -rf internal/ui/dist/assets && cp -r ui/dist/* internal/ui/dist/"
 
 builds:
-  - env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
+  - id: pm-linux
+    binary: pm
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: pm-macos
+    binary: pm
+    env: [CGO_ENABLED=0]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: pm-windows
+    binary: pm
+    env: [CGO_ENABLED=0]
+    goos: [windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+universal_binaries:
+  - id: pm-macos
+    replace: true
+    hooks:
+      post: uv run /Users/joescharf/.local/bin/pycodesign.py pm_pycodesign.ini -O {{ .Version }}
 
 archives:
-  - formats:
-      - tar.gz
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
-    files:
-      - README.md
+  - id: pm-linux-archive
+    ids: [pm-linux]
+    formats: ["tar.gz"]
+    name_template: "{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch \"amd64\" }}x86_64{{ else }}{{ .Arch }}{{ end }}"
+    files: [README.md]
+
+  - id: pm-macos-archive
+    ids: [pm-macos]
+    formats: ["zip"]
+    name_template: "{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch \"amd64\" }}x86_64{{ else }}{{ .Arch }}{{ end }}"
+    files: [README.md]
+
+  - id: pm-windows-archive
+    ids: [pm-windows]
+    formats: ["zip"]
+    name_template: "{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch \"amd64\" }}x86_64{{ else }}{{ .Arch }}{{ end }}"
+    files: [README.md]
 
 checksum:
   name_template: "checksums.txt"
@@ -56,15 +96,28 @@ changelog:
       - "^ci:"
       - "^chore:"
 
+release:
+  github:
+    owner: joescharf
+    name: pm
+  ids: [pm-macos-archive, pm-linux-archive, pm-windows-archive]
+  extra_files:
+    - glob: ./dist/pm_macos_universal.pkg
+  draft: true
+  replace_existing_draft: true
+  prerelease: auto
+
 homebrew_casks:
   - name: pm
+    ids: [pm-macos-archive]
     repository:
       owner: joescharf
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
+    skip_upload: auto
     homepage: https://github.com/joescharf/pm
-    description: "Project manager CLI — track projects, issues, and agent sessions from a single binary."
+    description: "Project manager CLI -- track projects, issues, and agent sessions from a single binary."
 
 dockers_v2:
   - images:

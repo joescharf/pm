@@ -58,9 +58,12 @@ mocks: ## Generate mocks with mockery
 	mockery
 
 ##@ Release
-.PHONY: release release-snapshot
+.PHONY: release release-local release-snapshot
 
 release: ## Create a release with goreleaser
+	goreleaser release --clean
+
+release-local: ## Create a signed local release (macOS code-signing)
 	goreleaser release --clean
 
 release-snapshot: ## Create a snapshot release (no publish)
