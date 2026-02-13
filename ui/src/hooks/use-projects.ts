@@ -59,3 +59,22 @@ export function useDeleteProject() {
     },
   });
 }
+
+export interface RefreshResult {
+  refreshed: number;
+  total: number;
+  failed: number;
+  results: { name: string; changed: boolean; error?: string }[];
+}
+
+export function useRefreshAllProjects() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<RefreshResult>("/api/v1/projects/refresh", { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["status"] });
+    },
+  });
+}

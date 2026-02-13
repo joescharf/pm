@@ -146,6 +146,8 @@ Starts an HTTP server that hosts:
 - **Web UI** at `http://localhost:<port>/` -- an embedded React dashboard
 - **REST API** at `http://localhost:<port>/api/v1/` -- see [REST API reference](../api.md)
 
+On startup, all projects are automatically refreshed in the background to ensure the dashboard shows up-to-date metadata (language, GitHub description, Pages status, branch counts, etc.). The dashboard also includes a **Refresh All** button for on-demand refreshing.
+
 **Examples:**
 
 ```bash

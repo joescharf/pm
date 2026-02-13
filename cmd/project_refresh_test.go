@@ -14,6 +14,7 @@ import (
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/refresh"
 	"github.com/joescharf/pm/internal/store"
 )
 
@@ -95,7 +96,7 @@ func TestRefreshProject_UpdatesLanguage(t *testing.T) {
 	gc := &mockGitClient{remoteURL: ""}
 	ghc := &mockGitHubClient{}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Equal(t, "go", p.Language)
@@ -116,7 +117,7 @@ func TestRefreshProject_UpdatesRepoURL(t *testing.T) {
 	gc := &mockGitClient{remoteURL: "https://github.com/new/repo"}
 	ghc := &mockGitHubClient{}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Equal(t, "https://github.com/new/repo", p.RepoURL)
@@ -143,7 +144,7 @@ func TestRefreshProject_FillsEmptyDescription(t *testing.T) {
 		repoInfo: &git.RepoInfo{Description: "A cool project", Language: "Go"},
 	}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Equal(t, "A cool project", p.Description)
@@ -166,7 +167,7 @@ func TestRefreshProject_SyncsDescriptionFromGitHub(t *testing.T) {
 		repoInfo: &git.RepoInfo{Description: "GitHub description"},
 	}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Equal(t, "GitHub description", p.Description)
@@ -187,7 +188,7 @@ func TestRefreshProject_NoChanges(t *testing.T) {
 	gc := &mockGitClient{remoteURL: ""}
 	ghc := &mockGitHubClient{}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
 	assert.False(t, changed)
 }
@@ -208,7 +209,7 @@ func TestRefreshProject_GitHubLanguageFallback(t *testing.T) {
 		repoInfo: &git.RepoInfo{Language: "Rust"},
 	}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.Equal(t, "Rust", p.Language)
@@ -230,7 +231,7 @@ func TestRefreshProject_DetectsGitHubPages(t *testing.T) {
 		pagesInfo: &git.PagesResult{URL: "https://test.github.io"},
 	}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.True(t, p.HasGitHubPages)

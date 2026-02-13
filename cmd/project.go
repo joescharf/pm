@@ -14,6 +14,7 @@ import (
 	"github.com/joescharf/pm/internal/golang"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/refresh"
 	"github.com/joescharf/pm/internal/store"
 )
 
@@ -428,7 +429,7 @@ func projectRefreshOneRun(nameOrPath string) error {
 		return nil
 	}
 
-	changed, err := refreshProject(ctx, s, p, gc, ghc)
+	changed, err := refresh.Project(ctx, s, p, gc, ghc)
 	if err != nil {
 		return fmt.Errorf("refresh %s: %w", p.Name, err)
 	}
@@ -448,121 +449,46 @@ func projectRefreshAllRun() error {
 	}
 	ctx := context.Background()
 
-	projects, err := s.ListProjects(ctx, "")
-	if err != nil {
-		return err
-	}
-
-	if len(projects) == 0 {
-		ui.Info("No projects tracked.")
+	if dryRun {
+		projects, err := s.ListProjects(ctx, "")
+		if err != nil {
+			return err
+		}
+		for _, p := range projects {
+			ui.DryRunMsg("Would refresh: %s", p.Name)
+		}
 		return nil
 	}
 
 	gc := git.NewClient()
 	ghc := git.NewGitHubClient()
-	refreshed := 0
 
-	for _, p := range projects {
-		if dryRun {
-			ui.DryRunMsg("Would refresh: %s", p.Name)
-			refreshed++
-			continue
-		}
+	result, err := refresh.All(ctx, s, gc, ghc)
+	if err != nil {
+		return err
+	}
 
-		changed, err := refreshProject(ctx, s, p, gc, ghc)
-		if err != nil {
-			ui.Warning("Failed to refresh %s: %v", p.Name, err)
-			continue
-		}
-		if changed {
-			ui.Success("Refreshed: %s", output.Cyan(p.Name))
-			refreshed++
+	if result.Total == 0 {
+		ui.Info("No projects tracked.")
+		return nil
+	}
+
+	for _, r := range result.Results {
+		if r.Error != "" {
+			ui.Warning("Failed to refresh %s: %s", r.Name, r.Error)
+		} else if r.Changed {
+			ui.Success("Refreshed: %s", output.Cyan(r.Name))
 		} else {
-			ui.VerboseLog("No changes: %s", p.Name)
+			ui.Info("No changes: %s", r.Name)
 		}
 	}
 
-	ui.Info("Refreshed %d of %d project(s)", refreshed, len(projects))
+	if result.Failed > 0 {
+		ui.Info("Refreshed %d of %d project(s), %d failed", result.Refreshed, result.Total, result.Failed)
+	} else {
+		ui.Info("Refreshed %d of %d project(s)", result.Refreshed, result.Total)
+	}
 	return nil
-}
-
-// refreshProject re-detects metadata for a project and persists changes.
-// Returns true if any field was updated.
-func refreshProject(ctx context.Context, s store.Store, p *models.Project, gc git.Client, ghc git.GitHubClient) (bool, error) {
-	changed := false
-
-	// Validate path still exists
-	if _, err := os.Stat(p.Path); err != nil {
-		ui.Warning("Project path missing: %s", p.Path)
-	}
-
-	// Re-detect language
-	if lang := golang.DetectLanguage(p.Path); lang != "" && lang != p.Language {
-		ui.VerboseLog("Language: %s -> %s", p.Language, lang)
-		p.Language = lang
-		changed = true
-	}
-
-	// Re-detect remote URL
-	if url, _ := gc.RemoteURL(p.Path); url != "" && url != p.RepoURL {
-		ui.VerboseLog("RepoURL: %s -> %s", p.RepoURL, url)
-		p.RepoURL = url
-		changed = true
-	}
-
-	// Update branch count
-	if branches, err := gc.BranchList(p.Path); err == nil {
-		count := len(branches)
-		if count != p.BranchCount {
-			ui.VerboseLog("BranchCount: %d -> %d", p.BranchCount, count)
-			p.BranchCount = count
-			changed = true
-		}
-	}
-
-	// Fetch GitHub metadata if we have a repo URL
-	if p.RepoURL != "" {
-		if owner, repo, err := git.ExtractOwnerRepo(p.RepoURL); err == nil {
-			if info, err := ghc.RepoInfo(owner, repo); err == nil && info != nil {
-				// Always sync description from GitHub if it has changed
-				if info.Description != "" && info.Description != p.Description {
-					ui.VerboseLog("Description: %q -> %q", p.Description, info.Description)
-					p.Description = info.Description
-					changed = true
-				}
-				// Use GitHub language as fallback if local detection returned empty
-				if p.Language == "" && info.Language != "" {
-					ui.VerboseLog("Language (GitHub): -> %s", info.Language)
-					p.Language = info.Language
-					changed = true
-				}
-			}
-
-			// Check GitHub Pages configuration
-			if pages, err := ghc.PagesInfo(owner, repo); err == nil && pages != nil {
-				if !p.HasGitHubPages || p.PagesURL != pages.URL {
-					ui.VerboseLog("GitHub Pages: %s", pages.URL)
-					p.HasGitHubPages = true
-					p.PagesURL = pages.URL
-					changed = true
-				}
-			} else if p.HasGitHubPages {
-				// Pages was removed
-				ui.VerboseLog("GitHub Pages: disabled")
-				p.HasGitHubPages = false
-				p.PagesURL = ""
-				changed = true
-			}
-		}
-	}
-
-	if changed {
-		if err := s.UpdateProject(ctx, p); err != nil {
-			return false, fmt.Errorf("update project: %w", err)
-		}
-	}
-
-	return changed, nil
 }
 
 // resolveProject finds a project by name or path.

@@ -39,12 +39,28 @@ All responses are JSON. Successful responses return the resource or array direct
 | `GET` | `/api/v1/projects/{id}` | Get a project by ID |
 | `PUT` | `/api/v1/projects/{id}` | Update a project |
 | `DELETE` | `/api/v1/projects/{id}` | Delete a project |
+| `POST` | `/api/v1/projects/refresh` | Refresh metadata for all projects |
 
 **Query parameters for `GET /api/v1/projects`:**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `group` | string | Filter by project group |
+
+**Refresh response shape (`POST /api/v1/projects/refresh`):**
+
+```json
+{
+  "refreshed": 5,
+  "total": 9,
+  "failed": 0,
+  "results": [
+    { "name": "my-api", "changed": true },
+    { "name": "docs", "changed": false },
+    { "name": "broken-project", "changed": false, "error": "project path missing: /old/path" }
+  ]
+}
+```
 
 ### Issues
 

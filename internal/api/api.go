@@ -13,6 +13,7 @@ import (
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/health"
 	"github.com/joescharf/pm/internal/models"
+	"github.com/joescharf/pm/internal/refresh"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
 )
@@ -46,6 +47,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{id}", s.getProject)
 	mux.HandleFunc("PUT /api/v1/projects/{id}", s.updateProject)
 	mux.HandleFunc("DELETE /api/v1/projects/{id}", s.deleteProject)
+
+	mux.HandleFunc("POST /api/v1/projects/refresh", s.refreshAllProjects)
 
 	mux.HandleFunc("GET /api/v1/projects/{id}/issues", s.listProjectIssues)
 	mux.HandleFunc("POST /api/v1/projects/{id}/issues", s.createProjectIssue)
@@ -184,6 +187,15 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) refreshAllProjects(w http.ResponseWriter, r *http.Request) {
+	result, err := refresh.All(r.Context(), s.store, s.git, s.gh)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // --- Issues ---

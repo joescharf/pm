@@ -146,6 +146,10 @@ Without `<name>`, refreshes all tracked projects. With a project name, refreshes
 - **Description** -- Syncs from GitHub repo "About" section (always updates when different)
 - **GitHub Pages** -- Detects if GitHub Pages is configured and stores the URL
 
+**Verbose mode** (`-v`) shows per-project details as they are refreshed.
+
+When refreshing all projects, each project is listed in the output -- changed projects show a success marker, unchanged projects show "No changes", and failed projects show a warning. A summary line reports totals.
+
 **Examples:**
 
 ```bash
@@ -154,7 +158,13 @@ pm project refresh my-api
 
 # Refresh all projects
 pm project refresh
+
+# Refresh with verbose output to see all metadata changes
+pm project refresh -v
 ```
+
+!!! note "Auto-refresh on serve"
+    Running `pm serve` automatically refreshes all projects in the background on startup, so the web dashboard always shows up-to-date metadata.
 
 Dotfile directories (starting with `.`) are skipped.
 

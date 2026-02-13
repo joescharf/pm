@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"github.com/joescharf/pm/internal/api"
 	"github.com/joescharf/pm/internal/git"
 	pmcp "github.com/joescharf/pm/internal/mcp"
+	"github.com/joescharf/pm/internal/refresh"
 	embedui "github.com/joescharf/pm/internal/ui"
 	"github.com/joescharf/pm/internal/wt"
 )
@@ -34,6 +36,13 @@ var serveCmd = &cobra.Command{
 		gc := git.NewClient()
 		ghc := git.NewGitHubClient()
 		wtc := wt.NewClient()
+
+		// Refresh all projects in the background
+		go func() {
+			if _, err := refresh.All(context.Background(), s, gc, ghc); err != nil {
+				ui.Warning("Background refresh: %v", err)
+			}
+		}()
 
 		// Create API server
 		apiServer := api.NewServer(s, gc, ghc, wtc)

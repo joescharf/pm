@@ -11,6 +11,7 @@ import (
 
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/refresh"
 	"github.com/joescharf/pm/internal/store"
 )
 
@@ -119,7 +120,7 @@ func rootRun(cmd *cobra.Command) error {
 	// Best-effort refresh
 	gc := git.NewClient()
 	ghc := git.NewGitHubClient()
-	_, _ = refreshProject(ctx, s, p, gc, ghc)
+	_, _ = refresh.Project(ctx, s, p, gc, ghc)
 
 	return projectShowRun(p.Name)
 }

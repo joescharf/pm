@@ -121,7 +121,7 @@ Global flags: `--verbose (-v)`, `--dry-run (-n)`, `--config <path>`
 
 `pm serve` starts an embedded web UI at `http://localhost:8080` with:
 
-- **Dashboard** -- Overview of all projects with health scores, open issue counts, and quick links
+- **Dashboard** -- Overview of all projects with health scores, open issue counts, quick links, and a Refresh All button to update project metadata on demand
 - **Projects** -- Detailed project view with git metadata, issues, and health breakdown
 - **Issues** -- All issues grouped by project with status/priority/tag filters
 - **Sessions** -- Agent session list with project column, clickable detail view showing git state (commits, ahead/behind, dirty status)
