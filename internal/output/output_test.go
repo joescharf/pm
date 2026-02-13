@@ -95,8 +95,8 @@ func TestTable(t *testing.T) {
 	table := u.Table([]string{"Name", "Status"})
 	require.NotNil(t, table)
 
-	table.Append([]string{"pm", "active"})
-	table.Append([]string{"wt", "stable"})
+	_ = table.Append([]string{"pm", "active"})
+	_ = table.Append([]string{"wt", "stable"})
 	err := table.Render()
 	require.NoError(t, err)
 

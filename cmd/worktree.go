@@ -86,7 +86,7 @@ func worktreeListRun(projectRef string) error {
 			continue
 		}
 		for _, w := range wts {
-			table.Append([]string{
+			_ = table.Append([]string{
 				output.Cyan(p.Name),
 				w.Branch,
 				w.Path,
@@ -100,7 +100,7 @@ func worktreeListRun(projectRef string) error {
 		return nil
 	}
 
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 
@@ -118,9 +118,9 @@ func listWorktreesForPath(name, path string) error {
 
 	table := ui.Table([]string{"Branch", "Path"})
 	for _, w := range wts {
-		table.Append([]string{w.Branch, w.Path})
+		_ = table.Append([]string{w.Branch, w.Path})
 	}
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 

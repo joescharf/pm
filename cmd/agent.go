@@ -260,7 +260,7 @@ func agentListRun(projectRef string) error {
 			lastActive = timeAgo(*sess.LastActiveAt)
 		}
 
-		table.Append([]string{
+		_ = table.Append([]string{
 			shortID(sess.ID),
 			projName,
 			sess.Branch,
@@ -270,7 +270,7 @@ func agentListRun(projectRef string) error {
 			timeAgo(sess.StartedAt),
 		})
 	}
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 
@@ -326,7 +326,7 @@ func agentHistoryRun(projectRef string) error {
 			lastCommit = fmt.Sprintf("%s %s", sess.LastCommitHash, msg)
 		}
 
-		table.Append([]string{
+		_ = table.Append([]string{
 			shortID(sess.ID),
 			projName,
 			sess.Branch,
@@ -336,7 +336,7 @@ func agentHistoryRun(projectRef string) error {
 			duration,
 		})
 	}
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 
@@ -422,14 +422,14 @@ func resolveSessionFromCwd(ctx context.Context, s store.Store) (string, error) {
 	fmt.Println("Multiple active sessions. Specify a session ID:")
 	table := ui.Table([]string{"ID", "Branch", "Status", "Started"})
 	for _, sess := range live {
-		table.Append([]string{
+		_ = table.Append([]string{
 			shortID(sess.ID),
 			sess.Branch,
 			string(sess.Status),
 			timeAgo(sess.StartedAt),
 		})
 	}
-	table.Render()
+	_ = table.Render()
 	return "", fmt.Errorf("ambiguous: multiple sessions found")
 }
 

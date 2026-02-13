@@ -72,12 +72,12 @@ func tagListRun() error {
 
 	table := ui.Table([]string{"Name", "Created"})
 	for _, t := range tags {
-		table.Append([]string{
+		_ = table.Append([]string{
 			output.Cyan(t.Name),
 			t.CreatedAt.Format("2006-01-02"),
 		})
 	}
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 

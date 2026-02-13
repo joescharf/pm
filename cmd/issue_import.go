@@ -102,7 +102,7 @@ func importWithLLM(ctx context.Context, s store.Store, content string) error {
 	// Preview table
 	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority"})
 	for i, e := range extracted {
-		table.Append([]string{
+		_ = table.Append([]string{
 			fmt.Sprintf("%d", i+1),
 			e.Project,
 			e.Title,
@@ -110,7 +110,7 @@ func importWithLLM(ctx context.Context, s store.Store, content string) error {
 			e.Priority,
 		})
 	}
-	table.Render()
+	_ = table.Render()
 
 	if importDryRun || dryRun {
 		ui.DryRunMsg("Would create %d issues", len(extracted))
@@ -142,7 +142,7 @@ func importWithProject(ctx context.Context, s store.Store, content, projectName 
 	// Preview table
 	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority"})
 	for i, e := range issues {
-		table.Append([]string{
+		_ = table.Append([]string{
 			fmt.Sprintf("%d", i+1),
 			e.Project,
 			e.Title,
@@ -150,7 +150,7 @@ func importWithProject(ctx context.Context, s store.Store, content, projectName 
 			e.Priority,
 		})
 	}
-	table.Render()
+	_ = table.Render()
 
 	if importDryRun || dryRun {
 		ui.DryRunMsg("Would create %d issues for project %s", len(issues), p.Name)

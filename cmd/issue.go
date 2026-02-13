@@ -227,7 +227,7 @@ func issueListRun(projectRef string) error {
 			ghStr = fmt.Sprintf("#%d", issue.GitHubIssue)
 		}
 
-		table.Append([]string{
+		_ = table.Append([]string{
 			shortID(issue.ID),
 			projName,
 			issue.Title,
@@ -237,7 +237,7 @@ func issueListRun(projectRef string) error {
 			ghStr,
 		})
 	}
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 

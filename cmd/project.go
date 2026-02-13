@@ -212,7 +212,7 @@ func projectListRun() error {
 		issues, _ := s.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID, Status: models.IssueStatusOpen})
 		openCount := fmt.Sprintf("%d", len(issues))
 
-		table.Append([]string{
+		_ = table.Append([]string{
 			output.Cyan(p.Name),
 			p.Path,
 			p.Language,
@@ -220,7 +220,7 @@ func projectListRun() error {
 			openCount,
 		})
 	}
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 

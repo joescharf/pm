@@ -344,14 +344,6 @@ func resultText(t *testing.T, result *mcpgo.CallToolResult) string {
 	return b.String()
 }
 
-// resultJSON parses the text result as JSON into the provided target.
-func resultJSON(t *testing.T, result *mcpgo.CallToolResult, target any) {
-	t.Helper()
-	text := resultText(t, result)
-	err := json.Unmarshal([]byte(text), target)
-	require.NoError(t, err, "failed to parse result JSON: %s", text)
-}
-
 // seedProject adds a project to the mock store and returns it.
 func seedProject(t *testing.T, ms *mockStore, name, path string) *models.Project {
 	t.Helper()

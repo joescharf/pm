@@ -64,9 +64,9 @@ func exportProjects(ctx context.Context, s store.Store) error {
 		return enc.Encode(projects)
 	case "csv":
 		w := csv.NewWriter(ui.Out)
-		w.Write([]string{"ID", "Name", "Path", "Language", "Group", "Created"})
+		_ = w.Write([]string{"ID", "Name", "Path", "Language", "Group", "Created"})
 		for _, p := range projects {
-			w.Write([]string{p.ID, p.Name, p.Path, p.Language, p.GroupName, p.CreatedAt.Format("2006-01-02")})
+			_ = w.Write([]string{p.ID, p.Name, p.Path, p.Language, p.GroupName, p.CreatedAt.Format("2006-01-02")})
 		}
 		w.Flush()
 		return w.Error()
@@ -97,13 +97,13 @@ func exportIssues(ctx context.Context, s store.Store) error {
 		return enc.Encode(issues)
 	case "csv":
 		w := csv.NewWriter(ui.Out)
-		w.Write([]string{"ID", "ProjectID", "Title", "Status", "Priority", "Type", "GitHub#", "Created"})
+		_ = w.Write([]string{"ID", "ProjectID", "Title", "Status", "Priority", "Type", "GitHub#", "Created"})
 		for _, i := range issues {
 			gh := ""
 			if i.GitHubIssue > 0 {
 				gh = fmt.Sprintf("%d", i.GitHubIssue)
 			}
-			w.Write([]string{i.ID, i.ProjectID, i.Title, string(i.Status), string(i.Priority), string(i.Type), gh, i.CreatedAt.Format("2006-01-02")})
+			_ = w.Write([]string{i.ID, i.ProjectID, i.Title, string(i.Status), string(i.Priority), string(i.Type), gh, i.CreatedAt.Format("2006-01-02")})
 		}
 		w.Flush()
 		return w.Error()
@@ -134,9 +134,9 @@ func exportSessions(ctx context.Context, s store.Store) error {
 		return enc.Encode(sessions)
 	case "csv":
 		w := csv.NewWriter(ui.Out)
-		w.Write([]string{"ID", "ProjectID", "Branch", "Status", "Commits", "Started"})
+		_ = w.Write([]string{"ID", "ProjectID", "Branch", "Status", "Commits", "Started"})
 		for _, sess := range sessions {
-			w.Write([]string{sess.ID, sess.ProjectID, sess.Branch, string(sess.Status),
+			_ = w.Write([]string{sess.ID, sess.ProjectID, sess.Branch, string(sess.Status),
 				fmt.Sprintf("%d", sess.CommitCount), sess.StartedAt.Format("2006-01-02T15:04:05Z")})
 		}
 		w.Flush()

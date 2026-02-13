@@ -56,7 +56,7 @@ func checkDir(base, name, label string) Check {
 func checkHasTests(path string) Check {
 	// Check for any _test.go files recursively
 	found := false
-	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}

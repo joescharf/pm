@@ -116,7 +116,7 @@ func statusOverviewRun() error {
 			versionStr = versions[i].Version
 		}
 
-		table.Append([]string{
+		_ = table.Append([]string{
 			output.Cyan(p.Name),
 			versionStr,
 			branch,
@@ -127,7 +127,7 @@ func statusOverviewRun() error {
 		})
 	}
 
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 
