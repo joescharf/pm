@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ChevronDown, ChevronRight, Plus, Rocket, X } from "lucide-react";
-import { useIssues } from "@/hooks/use-issues";
+import { toast } from "sonner";
+import { useIssues, useUpdateIssue } from "@/hooks/use-issues";
 import { useProjects } from "@/hooks/use-projects";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -41,6 +49,7 @@ interface ProjectGroup {
 
 export function IssuesPage() {
   const [filters, setFilters] = useState<FilterValues>({});
+  const [showClosed, setShowClosed] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
     new Set()
@@ -50,9 +59,15 @@ export function IssuesPage() {
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
   const { data: issuesData, isLoading: issuesLoading, error } = useIssues(filters);
   const { data: projectsData, isLoading: projectsLoading } = useProjects();
-  const issues = issuesData ?? [];
+  const updateIssue = useUpdateIssue();
+  const allIssues = issuesData ?? [];
   const projects = projectsData ?? [];
   const isLoading = issuesLoading || projectsLoading;
+
+  const issues = useMemo(() => {
+    if (showClosed) return allIssues;
+    return allIssues.filter((i) => i.Status !== "closed");
+  }, [allIssues, showClosed]);
 
   const groups = useMemo(() => {
     const projectMap = new Map<string, Project>();
@@ -115,6 +130,19 @@ export function IssuesPage() {
     setSelectedProjectId(null);
   };
 
+  async function handleBulkStatusChange(status: IssueStatus) {
+    const ids = Array.from(selectedIssues);
+    try {
+      await Promise.all(
+        ids.map((id) => updateIssue.mutateAsync({ id, Status: status }))
+      );
+      toast.success(`Updated ${ids.length} issue${ids.length > 1 ? "s" : ""} to ${status.replace("_", " ")}`);
+      clearSelection();
+    } catch (err) {
+      toast.error(`Failed to update issues: ${(err as Error).message}`);
+    }
+  }
+
   useEffect(() => {
     clearSelection();
   }, [filters]);
@@ -137,7 +165,18 @@ export function IssuesPage() {
         </Button>
       </div>
 
-      <IssueFilters filters={filters} onChange={setFilters} />
+      <div className="flex items-center gap-3">
+        <IssueFilters filters={filters} onChange={setFilters} />
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer ml-auto">
+          <input
+            type="checkbox"
+            checked={showClosed}
+            onChange={(e) => setShowClosed(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          Show Closed
+        </label>
+      </div>
 
       {isLoading ? (
         <div className="space-y-3">
@@ -239,6 +278,19 @@ export function IssuesPage() {
           <span className="text-sm font-medium">
             {selectedIssues.size} issue{selectedIssues.size > 1 ? "s" : ""} selected
           </span>
+          <Select
+            onValueChange={(value) => handleBulkStatusChange(value as IssueStatus)}
+          >
+            <SelectTrigger className="w-[140px] h-8">
+              <SelectValue placeholder="Set Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="in_progress">In Progress</SelectItem>
+              <SelectItem value="done">Done</SelectItem>
+              <SelectItem value="closed">Closed</SelectItem>
+            </SelectContent>
+          </Select>
           <Button size="sm" onClick={() => setLaunchDialogOpen(true)}>
             <Rocket className="h-4 w-4 mr-1" />
             Launch Agent

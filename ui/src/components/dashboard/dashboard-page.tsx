@@ -1,4 +1,5 @@
-import { RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useStatusOverview } from "@/hooks/use-status";
 import { useRefreshAllProjects } from "@/hooks/use-projects";
@@ -6,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { StatsCards } from "./stats-cards";
 import { StatusTable } from "./status-table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProjectForm } from "@/components/projects/project-form";
 
 export function DashboardPage() {
   const { data, isLoading, error } = useStatusOverview();
   const refreshAll = useRefreshAllProjects();
   const entries = data ?? [];
+  const [formOpen, setFormOpen] = useState(false);
 
   function handleRefresh() {
     refreshAll.mutate(undefined, {
@@ -43,17 +46,23 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={refreshAll.isPending}
-        >
-          <RefreshCw
-            className={`size-4 mr-2 ${refreshAll.isPending ? "animate-spin" : ""}`}
-          />
-          {refreshAll.isPending ? "Refreshing..." : "Refresh All"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshAll.isPending}
+          >
+            <RefreshCw
+              className={`size-4 mr-2 ${refreshAll.isPending ? "animate-spin" : ""}`}
+            />
+            {refreshAll.isPending ? "Refreshing..." : "Refresh All"}
+          </Button>
+          <Button size="sm" onClick={() => setFormOpen(true)}>
+            <Plus className="size-4 mr-2" />
+            New Project
+          </Button>
+        </div>
       </div>
       {isLoading ? (
         <div className="space-y-4">
@@ -70,6 +79,7 @@ export function DashboardPage() {
           <StatusTable entries={entries} />
         </>
       )}
+      <ProjectForm open={formOpen} onOpenChange={setFormOpen} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
+import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -18,11 +19,62 @@ function repoURL(url: string): string {
   return url.replace(/\.git$/, "");
 }
 
+type SortKey = "name" | "openIssues" | "inProgress" | "health" | "lastActivity";
+type SortDir = "asc" | "desc";
+
 interface StatusTableProps {
   entries: StatusEntry[];
 }
 
 export function StatusTable({ entries }: StatusTableProps) {
+  const [sortKey, setSortKey] = useState<SortKey>("lastActivity");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const sorted = useMemo(() => {
+    const copy = [...entries];
+    copy.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "name":
+          cmp = a.project.Name.localeCompare(b.project.Name);
+          break;
+        case "openIssues":
+          cmp = a.openIssues - b.openIssues;
+          break;
+        case "inProgress":
+          cmp = a.inProgressIssues - b.inProgressIssues;
+          break;
+        case "health":
+          cmp = a.health - b.health;
+          break;
+        case "lastActivity": {
+          const da = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+          const db = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+          cmp = da - db;
+          break;
+        }
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [entries, sortKey, sortDir]);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "name" ? "asc" : "desc");
+    }
+  }
+
+  function SortIcon({ column }: { column: SortKey }) {
+    if (sortKey !== column) return <ArrowUpDown className="size-3 ml-1 opacity-40" />;
+    return sortDir === "asc"
+      ? <ArrowUp className="size-3 ml-1" />
+      : <ArrowDown className="size-3 ml-1" />;
+  }
+
   if (entries.length === 0) {
     return <EmptyState message="No projects tracked yet" />;
   }
@@ -31,18 +83,38 @@ export function StatusTable({ entries }: StatusTableProps) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Project</TableHead>
+          <TableHead>
+            <button onClick={() => toggleSort("name")} className="inline-flex items-center hover:text-foreground transition-colors">
+              Project <SortIcon column="name" />
+            </button>
+          </TableHead>
           <TableHead>Version</TableHead>
           <TableHead>Branch</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead className="text-center">Open</TableHead>
-          <TableHead className="text-center">In Progress</TableHead>
-          <TableHead className="text-center">Health</TableHead>
-          <TableHead>Last Activity</TableHead>
+          <TableHead className="text-center">
+            <button onClick={() => toggleSort("openIssues")} className="inline-flex items-center hover:text-foreground transition-colors">
+              Open <SortIcon column="openIssues" />
+            </button>
+          </TableHead>
+          <TableHead className="text-center">
+            <button onClick={() => toggleSort("inProgress")} className="inline-flex items-center hover:text-foreground transition-colors">
+              In Progress <SortIcon column="inProgress" />
+            </button>
+          </TableHead>
+          <TableHead className="text-center">
+            <button onClick={() => toggleSort("health")} className="inline-flex items-center hover:text-foreground transition-colors">
+              Health <SortIcon column="health" />
+            </button>
+          </TableHead>
+          <TableHead>
+            <button onClick={() => toggleSort("lastActivity")} className="inline-flex items-center hover:text-foreground transition-colors">
+              Last Activity <SortIcon column="lastActivity" />
+            </button>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {entries.map((e) => (
+        {sorted.map((e) => (
           <TableRow key={e.project.ID}>
             <TableCell>
               <Link

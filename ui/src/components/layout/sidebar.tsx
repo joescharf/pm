@@ -1,6 +1,5 @@
 import {
   LayoutDashboard,
-  FolderGit2,
   CircleDot,
   Bot,
 } from "lucide-react";
@@ -9,7 +8,6 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/projects", label: "Projects", icon: FolderGit2 },
   { to: "/issues", label: "Issues", icon: CircleDot },
   { to: "/sessions", label: "Sessions", icon: Bot },
 ];
