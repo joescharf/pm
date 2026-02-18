@@ -40,6 +40,8 @@ Run "uvx showboat --help" and then use showboat to create a document describing 
 - Has a binary `rodney` if installed directly or `uvx rodney` if not installed on the local system.
 - [Repo](https://github.com/simonw/rodney)
 
+Run `uvx rodney --help` to see the available commands and options for interacting with the web via Chrome automation. You can use rodney to perform tasks such as validating web pages, taking screenshots, and more, all from the command line.
+
 ### Use case:
 
 Use rodney to validate web pages you just built to ensure they have the expected content, structure, and functionality. For example, you could use rodney to check that a new feature you just built is present in a build of the web app, and if not, you can iterate on the feature until it is present and correct.
