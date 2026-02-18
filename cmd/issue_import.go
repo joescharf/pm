@@ -19,7 +19,7 @@ var (
 	importDryRun  bool
 )
 
-var issueImportCmd = &cobra.Command{
+var importCmd = &cobra.Command{
 	Use:   "import <file>",
 	Short: "Import issues from a markdown file",
 	Long: `Import issues from a markdown file using an LLM to extract structured data.
@@ -35,9 +35,9 @@ Requires ANTHROPIC_API_KEY environment variable or anthropic.api_key in config.`
 }
 
 func init() {
-	issueImportCmd.Flags().StringVar(&importProject, "project", "", "Assign all issues to this project (skip LLM project inference)")
-	issueImportCmd.Flags().BoolVar(&importDryRun, "dry-run", false, "Preview extracted issues without creating them")
-	issueCmd.AddCommand(issueImportCmd)
+	importCmd.Flags().StringVar(&importProject, "project", "", "Assign all issues to this project (skip LLM project inference)")
+	importCmd.Flags().BoolVar(&importDryRun, "dry-run", false, "Preview extracted issues without creating them")
+	rootCmd.AddCommand(importCmd)
 }
 
 func issueImportRun(file string) error {
@@ -99,21 +99,47 @@ func importWithLLM(ctx context.Context, s store.Store, content string) error {
 		return nil
 	}
 
-	// Preview table
-	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority"})
+	// Preview table with duplicate detection
+	dupsInDryRun := 0
+	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority", "Status"})
+	dryRunTitleCache := make(map[string]map[string]bool)
 	for i, e := range extracted {
+		status := "new"
+		if importDryRun || dryRun {
+			// Check for duplicates in dry-run mode
+			if _, ok := dryRunTitleCache[e.Project]; !ok {
+				proj, err := s.GetProjectByName(ctx, e.Project)
+				if err == nil {
+					titles, err := existingTitlesForProject(ctx, s, proj.ID)
+					if err == nil {
+						dryRunTitleCache[e.Project] = titles
+					}
+				}
+				if dryRunTitleCache[e.Project] == nil {
+					dryRunTitleCache[e.Project] = make(map[string]bool)
+				}
+			}
+			if dryRunTitleCache[e.Project][e.Title] {
+				status = "duplicate"
+				dupsInDryRun++
+			} else {
+				dryRunTitleCache[e.Project][e.Title] = true
+			}
+		}
 		_ = table.Append([]string{
 			fmt.Sprintf("%d", i+1),
 			e.Project,
 			e.Title,
 			e.Type,
 			e.Priority,
+			status,
 		})
 	}
 	_ = table.Render()
 
 	if importDryRun || dryRun {
-		ui.DryRunMsg("Would create %d issues", len(extracted))
+		newCount := len(extracted) - dupsInDryRun
+		ui.DryRunMsg("Would create %d issues, skip %d duplicates", newCount, dupsInDryRun)
 		return nil
 	}
 
@@ -139,21 +165,37 @@ func importWithProject(ctx context.Context, s store.Store, content, projectName 
 		issues[i].Project = p.Name
 	}
 
-	// Preview table
-	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority"})
+	// Preview table with duplicate detection
+	dupsInDryRun := 0
+	existingTitles, _ := existingTitlesForProject(ctx, s, p.ID)
+	if existingTitles == nil {
+		existingTitles = make(map[string]bool)
+	}
+	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority", "Status"})
 	for i, e := range issues {
+		status := "new"
+		if importDryRun || dryRun {
+			if existingTitles[e.Title] {
+				status = "duplicate"
+				dupsInDryRun++
+			} else {
+				existingTitles[e.Title] = true
+			}
+		}
 		_ = table.Append([]string{
 			fmt.Sprintf("%d", i+1),
 			e.Project,
 			e.Title,
 			e.Type,
 			e.Priority,
+			status,
 		})
 	}
 	_ = table.Render()
 
 	if importDryRun || dryRun {
-		ui.DryRunMsg("Would create %d issues for project %s", len(issues), p.Name)
+		newCount := len(issues) - dupsInDryRun
+		ui.DryRunMsg("Would create %d issues for project %s, skip %d duplicates", newCount, p.Name, dupsInDryRun)
 		return nil
 	}
 
@@ -273,11 +315,27 @@ func parseMarkdownIssues(content string) []llm.ExtractedIssue {
 	return issues
 }
 
+// existingTitlesForProject returns the set of existing issue titles for a project.
+func existingTitlesForProject(ctx context.Context, s store.Store, projectID string) (map[string]bool, error) {
+	issues, err := s.ListIssues(ctx, store.IssueListFilter{ProjectID: projectID})
+	if err != nil {
+		return nil, err
+	}
+	titles := make(map[string]bool, len(issues))
+	for _, issue := range issues {
+		titles[issue.Title] = true
+	}
+	return titles, nil
+}
+
 // createExtractedIssues resolves projects and creates issues in the store.
+// It skips issues whose title already exists in the same project (duplicate detection).
 func createExtractedIssues(ctx context.Context, s store.Store, extracted []llm.ExtractedIssue) error {
-	// Cache project lookups
+	// Cache project lookups and existing titles per project
 	projectCache := make(map[string]*models.Project)
+	titleCache := make(map[string]map[string]bool) // projectName -> set of titles
 	created := 0
+	duplicates := 0
 	skipped := 0
 
 	for _, e := range extracted {
@@ -291,6 +349,19 @@ func createExtractedIssues(ctx context.Context, s store.Store, extracted []llm.E
 			}
 			projectCache[e.Project] = p
 			proj = p
+
+			// Load existing titles for this project
+			titles, err := existingTitlesForProject(ctx, s, proj.ID)
+			if err != nil {
+				return fmt.Errorf("load existing issues for project %q: %w", e.Project, err)
+			}
+			titleCache[e.Project] = titles
+		}
+
+		// Check for duplicate
+		if titleCache[e.Project][e.Title] {
+			duplicates++
+			continue
 		}
 
 		issueType := models.IssueType(e.Type)
@@ -319,6 +390,8 @@ func createExtractedIssues(ctx context.Context, s store.Store, extracted []llm.E
 			continue
 		}
 		created++
+		// Add to title cache so subsequent duplicates within this batch are caught
+		titleCache[e.Project][e.Title] = true
 	}
 
 	// Count unique projects
@@ -328,8 +401,11 @@ func createExtractedIssues(ctx context.Context, s store.Store, extracted []llm.E
 	}
 
 	ui.Success("Created %d issues across %d projects", created, len(projectSet))
+	if duplicates > 0 {
+		ui.Info("Skipped %d duplicate issues", duplicates)
+	}
 	if skipped > 0 {
-		ui.Warning("Skipped %d issues", skipped)
+		ui.Warning("Skipped %d issues (errors)", skipped)
 	}
 
 	return nil

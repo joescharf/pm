@@ -1,10 +1,17 @@
 package cmd
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/joescharf/pm/internal/llm"
+	"github.com/joescharf/pm/internal/models"
+	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/store"
 )
 
 func TestParseMarkdownIssues(t *testing.T) {
@@ -197,5 +204,118 @@ Some paragraph text without any list items.
 `
 		issues := parseMarkdownIssues(md)
 		assert.Empty(t, issues)
+	})
+}
+
+// setupTestStore creates a temp SQLite store with a project for import tests.
+func setupTestStore(t *testing.T) (store.Store, *models.Project) {
+	t.Helper()
+	dir := t.TempDir()
+	s, err := store.NewSQLiteStore(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	require.NoError(t, s.Migrate(context.Background()))
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Initialize the cmd-level ui so createExtractedIssues can use it
+	ui = output.New()
+
+	proj := &models.Project{Name: "testproj", Path: dir}
+	require.NoError(t, s.CreateProject(context.Background(), proj))
+	return s, proj
+}
+
+func TestCreateExtractedIssues_Idempotent(t *testing.T) {
+	t.Run("first import creates all issues", func(t *testing.T) {
+		s, proj := setupTestStore(t)
+		ctx := context.Background()
+
+		extracted := []llm.ExtractedIssue{
+			{Project: proj.Name, Title: "Issue A", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "Issue B", Type: "bug", Priority: "high"},
+			{Project: proj.Name, Title: "Issue C", Type: "chore", Priority: "low"},
+		}
+
+		err := createExtractedIssues(ctx, s, extracted)
+		require.NoError(t, err)
+
+		issues, err := s.ListIssues(ctx, store.IssueListFilter{ProjectID: proj.ID})
+		require.NoError(t, err)
+		assert.Len(t, issues, 3)
+	})
+
+	t.Run("second import creates no duplicates", func(t *testing.T) {
+		s, proj := setupTestStore(t)
+		ctx := context.Background()
+
+		extracted := []llm.ExtractedIssue{
+			{Project: proj.Name, Title: "Issue A", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "Issue B", Type: "bug", Priority: "high"},
+		}
+
+		// First import
+		err := createExtractedIssues(ctx, s, extracted)
+		require.NoError(t, err)
+
+		// Second import — same issues
+		err = createExtractedIssues(ctx, s, extracted)
+		require.NoError(t, err)
+
+		issues, err := s.ListIssues(ctx, store.IssueListFilter{ProjectID: proj.ID})
+		require.NoError(t, err)
+		assert.Len(t, issues, 2, "should not create duplicates")
+	})
+
+	t.Run("mixed import creates only new issues", func(t *testing.T) {
+		s, proj := setupTestStore(t)
+		ctx := context.Background()
+
+		// First batch
+		batch1 := []llm.ExtractedIssue{
+			{Project: proj.Name, Title: "Existing A", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "Existing B", Type: "bug", Priority: "high"},
+		}
+		err := createExtractedIssues(ctx, s, batch1)
+		require.NoError(t, err)
+
+		// Second batch — mix of existing and new
+		batch2 := []llm.ExtractedIssue{
+			{Project: proj.Name, Title: "Existing A", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "New C", Type: "chore", Priority: "low"},
+			{Project: proj.Name, Title: "Existing B", Type: "bug", Priority: "high"},
+			{Project: proj.Name, Title: "New D", Type: "feature", Priority: "medium"},
+		}
+		err = createExtractedIssues(ctx, s, batch2)
+		require.NoError(t, err)
+
+		issues, err := s.ListIssues(ctx, store.IssueListFilter{ProjectID: proj.ID})
+		require.NoError(t, err)
+		assert.Len(t, issues, 4, "should have 2 original + 2 new")
+
+		titles := make(map[string]bool)
+		for _, issue := range issues {
+			titles[issue.Title] = true
+		}
+		assert.True(t, titles["Existing A"])
+		assert.True(t, titles["Existing B"])
+		assert.True(t, titles["New C"])
+		assert.True(t, titles["New D"])
+	})
+
+	t.Run("duplicates within same batch are caught", func(t *testing.T) {
+		s, proj := setupTestStore(t)
+		ctx := context.Background()
+
+		extracted := []llm.ExtractedIssue{
+			{Project: proj.Name, Title: "Dup Issue", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "Dup Issue", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "Unique Issue", Type: "bug", Priority: "high"},
+		}
+
+		err := createExtractedIssues(ctx, s, extracted)
+		require.NoError(t, err)
+
+		issues, err := s.ListIssues(ctx, store.IssueListFilter{ProjectID: proj.ID})
+		require.NoError(t, err)
+		assert.Len(t, issues, 2, "should deduplicate within the same batch")
 	})
 }

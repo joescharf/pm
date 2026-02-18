@@ -63,7 +63,6 @@ export function IssuesPage() {
     new Set()
   );
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const { data: issuesData, isLoading: issuesLoading, error } = useIssues(filters);
@@ -106,6 +105,18 @@ export function IssuesPage() {
     );
   }, [issues, projects]);
 
+  const selectedProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const issue of issues) {
+      if (selectedIssues.has(issue.ID)) {
+        ids.add(issue.ProjectID);
+      }
+    }
+    return ids;
+  }, [selectedIssues, issues]);
+
+  const canLaunchAgent = selectedProjectIds.size === 1;
+
   const toggleCollapsed = (projectId: string) => {
     setCollapsedProjects((prev) => {
       const next = new Set(prev);
@@ -120,18 +131,11 @@ export function IssuesPage() {
 
   const toggleIssueSelection = (issue: Issue) => {
     setSelectedIssues((prev) => {
-      // If selecting from a different project, start fresh
-      if (selectedProjectId && selectedProjectId !== issue.ProjectID) {
-        setSelectedProjectId(issue.ProjectID);
-        return new Set([issue.ID]);
-      }
       const next = new Set(prev);
       if (next.has(issue.ID)) {
         next.delete(issue.ID);
-        if (next.size === 0) setSelectedProjectId(null);
       } else {
         next.add(issue.ID);
-        setSelectedProjectId(issue.ProjectID);
       }
       return next;
     });
@@ -139,7 +143,6 @@ export function IssuesPage() {
 
   const clearSelection = () => {
     setSelectedIssues(new Set());
-    setSelectedProjectId(null);
   };
 
   async function handleBulkStatusChange(status: IssueStatus) {
@@ -313,7 +316,12 @@ export function IssuesPage() {
               <SelectItem value="closed">Closed</SelectItem>
             </SelectContent>
           </Select>
-          <Button size="sm" onClick={() => setLaunchDialogOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => setLaunchDialogOpen(true)}
+            disabled={!canLaunchAgent}
+            title={canLaunchAgent ? undefined : "Select issues from a single project to launch an agent"}
+          >
             <Rocket className="h-4 w-4 mr-1" />
             Launch Agent
           </Button>
@@ -333,12 +341,12 @@ export function IssuesPage() {
 
       <IssueForm open={formOpen} onOpenChange={setFormOpen} />
 
-      {selectedProjectId && (
+      {canLaunchAgent && (
         <AgentLaunchDialog
           open={launchDialogOpen}
           onOpenChange={setLaunchDialogOpen}
           issues={issues.filter((i) => selectedIssues.has(i.ID))}
-          project={projects.find((p) => p.ID === selectedProjectId)!}
+          project={projects.find((p) => p.ID === [...selectedProjectIds][0])!}
           onSuccess={clearSelection}
         />
       )}
