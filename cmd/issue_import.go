@@ -99,6 +99,11 @@ func importWithLLM(ctx context.Context, s store.Store, content string) error {
 		return nil
 	}
 
+	// Preserve the original markdown as body on each extracted issue
+	for i := range extracted {
+		extracted[i].Body = content
+	}
+
 	// Preview table
 	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority"})
 	for i, e := range extracted {
@@ -206,6 +211,7 @@ func parseMarkdownIssues(content string) []llm.ExtractedIssue {
 				Title:    title,
 				Type:     classifyIssueType(title),
 				Priority: classifyIssuePriority(title),
+				Body:     line,
 			})
 		}
 	}
@@ -247,6 +253,7 @@ func createExtractedIssues(ctx context.Context, s store.Store, extracted []llm.E
 			ProjectID:   proj.ID,
 			Title:       e.Title,
 			Description: e.Description,
+			Body:        e.Body,
 			Status:      models.IssueStatusOpen,
 			Priority:    issuePriority,
 			Type:        issueType,

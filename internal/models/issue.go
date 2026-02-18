@@ -36,6 +36,7 @@ type Issue struct {
 	ProjectID   string
 	Title       string
 	Description string
+	Body        string // raw/original text preserved from import
 	Status      IssueStatus
 	Priority    IssuePriority
 	Type        IssueType

@@ -18,6 +18,7 @@ import (
 var (
 	issueTitle    string
 	issueDesc     string
+	issueBody     string
 	issuePriority string
 	issueType     string
 	issueStatus   string
@@ -103,6 +104,7 @@ var issueLinkCmd = &cobra.Command{
 func init() {
 	issueAddCmd.Flags().StringVar(&issueTitle, "title", "", "Issue title (required)")
 	issueAddCmd.Flags().StringVar(&issueDesc, "desc", "", "Issue description")
+	issueAddCmd.Flags().StringVar(&issueBody, "body", "", "Raw body text (e.g. original issue text)")
 	issueAddCmd.Flags().StringVar(&issuePriority, "priority", "medium", "Priority: low, medium, high")
 	issueAddCmd.Flags().StringVar(&issueType, "type", "feature", "Type: feature, bug, chore")
 	issueAddCmd.Flags().StringVar(&issueTag, "tag", "", "Tag to apply")
@@ -117,6 +119,7 @@ func init() {
 	issueUpdateCmd.Flags().StringVar(&issuePriority, "priority", "", "New priority")
 	issueUpdateCmd.Flags().StringVar(&issueTitle, "title", "", "New title")
 	issueUpdateCmd.Flags().StringVar(&issueDesc, "desc", "", "New description")
+	issueUpdateCmd.Flags().StringVar(&issueBody, "body", "", "New body text")
 
 	issueLinkCmd.Flags().IntVar(&issueGitHub, "github", 0, "GitHub issue number")
 	_ = issueLinkCmd.MarkFlagRequired("github")
@@ -146,6 +149,7 @@ func issueAddRun(projectRef string) error {
 		ProjectID:   p.ID,
 		Title:       issueTitle,
 		Description: issueDesc,
+		Body:        issueBody,
 		Status:      models.IssueStatusOpen,
 		Priority:    models.IssuePriority(issuePriority),
 		Type:        models.IssueType(issueType),
@@ -266,6 +270,9 @@ func issueShowRun(id string) error {
 	if issue.Description != "" {
 		fmt.Fprintf(ui.Out, "  Desc:       %s\n", issue.Description)
 	}
+	if issue.Body != "" {
+		fmt.Fprintf(ui.Out, "  Body:       %s\n", issue.Body)
+	}
 	if issue.GitHubIssue > 0 {
 		fmt.Fprintf(ui.Out, "  GitHub:     #%d\n", issue.GitHubIssue)
 	}
@@ -310,9 +317,13 @@ func issueUpdateRun(id string) error {
 		issue.Description = issueDesc
 		changed = true
 	}
+	if issueBody != "" {
+		issue.Body = issueBody
+		changed = true
+	}
 
 	if !changed {
-		return fmt.Errorf("no updates specified (use --status, --priority, --title, or --desc)")
+		return fmt.Errorf("no updates specified (use --status, --priority, --title, --desc, or --body)")
 	}
 
 	if dryRun {

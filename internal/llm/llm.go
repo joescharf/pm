@@ -17,6 +17,7 @@ type ExtractedIssue struct {
 	Description string `json:"description"`
 	Type        string `json:"type"`
 	Priority    string `json:"priority"`
+	Body        string `json:"-"` // raw text from import, not sent to/from LLM
 }
 
 // Client wraps the Anthropic API for issue extraction.

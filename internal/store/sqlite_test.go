@@ -203,6 +203,60 @@ func TestIssueCRUD(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestIssueBodyField(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	p := &models.Project{Name: "body-test", Path: "/tmp/body-test"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Create issue with body
+	issue := &models.Issue{
+		ProjectID:   p.ID,
+		Title:       "Test issue",
+		Description: "Short summary",
+		Body:        "This is the full raw body text\nfrom the original import file.",
+		Status:      models.IssueStatusOpen,
+		Priority:    models.IssuePriorityMedium,
+		Type:        models.IssueTypeFeature,
+	}
+	require.NoError(t, s.CreateIssue(ctx, issue))
+
+	// Get and verify body round-trips
+	got, err := s.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Short summary", got.Description)
+	assert.Equal(t, "This is the full raw body text\nfrom the original import file.", got.Body)
+
+	// Update body
+	got.Body = "Updated body content"
+	require.NoError(t, s.UpdateIssue(ctx, got))
+
+	got2, err := s.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Updated body content", got2.Body)
+
+	// List also returns body
+	issues, err := s.ListIssues(ctx, IssueListFilter{ProjectID: p.ID})
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, "Updated body content", issues[0].Body)
+
+	// Empty body defaults correctly
+	issue2 := &models.Issue{
+		ProjectID: p.ID,
+		Title:     "No body issue",
+		Status:    models.IssueStatusOpen,
+		Priority:  models.IssuePriorityLow,
+		Type:      models.IssueTypeChore,
+	}
+	require.NoError(t, s.CreateIssue(ctx, issue2))
+
+	got3, err := s.GetIssue(ctx, issue2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "", got3.Body)
+}
+
 func TestIssueCascadeDelete(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

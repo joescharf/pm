@@ -99,6 +99,19 @@ func TestParseMarkdownIssues(t *testing.T) {
 		assert.Equal(t, "First issue", issues[0].Title)
 	})
 
+	t.Run("body preserved from raw line", func(t *testing.T) {
+		md := `## Project test
+
+1. Fix critical crash on startup
+- Add dark mode support
+`
+		issues := parseMarkdownIssues(md)
+		require.Len(t, issues, 2)
+
+		assert.Equal(t, "1. Fix critical crash on startup", issues[0].Body)
+		assert.Equal(t, "- Add dark mode support", issues[1].Body)
+	})
+
 	t.Run("empty file", func(t *testing.T) {
 		issues := parseMarkdownIssues("")
 		assert.Empty(t, issues)

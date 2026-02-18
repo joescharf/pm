@@ -271,6 +271,7 @@ func (s *Server) handleListIssues(ctx context.Context, request mcp.CallToolReque
 		ProjectID   string   `json:"project_id"`
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
+		Body        string   `json:"body,omitempty"`
 		Status      string   `json:"status"`
 		Priority    string   `json:"priority"`
 		Type        string   `json:"type"`
@@ -287,6 +288,7 @@ func (s *Server) handleListIssues(ctx context.Context, request mcp.CallToolReque
 			ProjectID:   issue.ProjectID,
 			Title:       issue.Title,
 			Description: issue.Description,
+			Body:        issue.Body,
 			Status:      string(issue.Status),
 			Priority:    string(issue.Priority),
 			Type:        string(issue.Type),
@@ -311,6 +313,7 @@ func (s *Server) createIssueTool() (mcp.Tool, server.ToolHandlerFunc) {
 		mcp.WithString("project", mcp.Required(), mcp.Description("Project name")),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Issue title")),
 		mcp.WithString("description", mcp.Description("Issue description")),
+		mcp.WithString("body", mcp.Description("Raw body text (e.g. original issue text for full context)")),
 		mcp.WithString("type", mcp.Description("Issue type: feature, bug, chore (default: feature)")),
 		mcp.WithString("priority", mcp.Description("Issue priority: low, medium, high (default: medium)")),
 	)
@@ -335,11 +338,13 @@ func (s *Server) handleCreateIssue(ctx context.Context, request mcp.CallToolRequ
 	issueType := request.GetString("type", "feature")
 	priority := request.GetString("priority", "medium")
 	description := request.GetString("description", "")
+	body := request.GetString("body", "")
 
 	issue := &models.Issue{
 		ProjectID:   p.ID,
 		Title:       title,
 		Description: description,
+		Body:        body,
 		Status:      models.IssueStatusOpen,
 		Priority:    models.IssuePriority(priority),
 		Type:        models.IssueType(issueType),
@@ -350,15 +355,16 @@ func (s *Server) handleCreateIssue(ctx context.Context, request mcp.CallToolRequ
 	}
 
 	result := map[string]any{
-		"id":         issue.ID,
-		"project_id": p.ID,
-		"project":    p.Name,
-		"title":      issue.Title,
+		"id":          issue.ID,
+		"project_id":  p.ID,
+		"project":     p.Name,
+		"title":       issue.Title,
 		"description": issue.Description,
-		"status":     string(issue.Status),
-		"priority":   string(issue.Priority),
-		"type":       string(issue.Type),
-		"created_at": issue.CreatedAt.Format(time.RFC3339),
+		"body":        issue.Body,
+		"status":      string(issue.Status),
+		"priority":    string(issue.Priority),
+		"type":        string(issue.Type),
+		"created_at":  issue.CreatedAt.Format(time.RFC3339),
 	}
 
 	data, err := json.Marshal(result)
@@ -376,6 +382,7 @@ func (s *Server) updateIssueTool() (mcp.Tool, server.ToolHandlerFunc) {
 		mcp.WithString("status", mcp.Description("New status: open, in_progress, done, closed")),
 		mcp.WithString("title", mcp.Description("New title")),
 		mcp.WithString("description", mcp.Description("New description")),
+		mcp.WithString("body", mcp.Description("New body text")),
 		mcp.WithString("priority", mcp.Description("New priority: low, medium, high")),
 	)
 	return tool, s.handleUpdateIssue
@@ -412,13 +419,17 @@ func (s *Server) handleUpdateIssue(ctx context.Context, request mcp.CallToolRequ
 		issue.Description = desc
 		updated = true
 	}
+	if body := request.GetString("body", ""); body != "" {
+		issue.Body = body
+		updated = true
+	}
 	if priority := request.GetString("priority", ""); priority != "" {
 		issue.Priority = models.IssuePriority(priority)
 		updated = true
 	}
 
 	if !updated {
-		return mcp.NewToolResultError("no fields provided to update; specify at least one of: status, title, description, priority"), nil
+		return mcp.NewToolResultError("no fields provided to update; specify at least one of: status, title, description, body, priority"), nil
 	}
 
 	if err := s.store.UpdateIssue(ctx, issue); err != nil {
@@ -430,6 +441,7 @@ func (s *Server) handleUpdateIssue(ctx context.Context, request mcp.CallToolRequ
 		"project_id":  issue.ProjectID,
 		"title":       issue.Title,
 		"description": issue.Description,
+		"body":        issue.Body,
 		"status":      string(issue.Status),
 		"priority":    string(issue.Priority),
 		"type":        string(issue.Type),
