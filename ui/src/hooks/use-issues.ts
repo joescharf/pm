@@ -80,3 +80,33 @@ export function useDeleteIssue() {
     },
   });
 }
+
+export function useBulkUpdateIssueStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: string }) =>
+      apiFetch<{ updated: number }>(`/api/v1/issues/bulk-update`, {
+        method: "POST",
+        body: JSON.stringify({ ids, status }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["issues"] });
+      qc.invalidateQueries({ queryKey: ["status"] });
+    },
+  });
+}
+
+export function useBulkDeleteIssues() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      apiFetch<{ deleted: number }>(`/api/v1/issues/bulk-delete`, {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["issues"] });
+      qc.invalidateQueries({ queryKey: ["status"] });
+    },
+  });
+}

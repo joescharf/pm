@@ -40,6 +40,11 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
+	// SQLite only supports one concurrent writer. Limiting to a single connection
+	// serializes all DB access through Go's connection pool, preventing
+	// "database is locked" errors from concurrent HTTP requests.
+	db.SetMaxOpenConns(1)
+
 	// Enable WAL mode for concurrent reads
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		_ = db.Close()
@@ -413,6 +418,74 @@ func (s *SQLiteStore) DeleteIssue(ctx context.Context, id string) error {
 		return fmt.Errorf("issue not found: %s", id)
 	}
 	return nil
+}
+
+func (s *SQLiteStore) BulkUpdateIssueStatus(ctx context.Context, ids []string, status models.IssueStatus) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids)+2)
+	args = append(args, string(status), time.Now().UTC())
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf(
+		"UPDATE issues SET status=?, updated_at=? WHERE id IN (%s)",
+		strings.Join(placeholders, ","),
+	)
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("bulk update issue status: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit tx: %w", err)
+	}
+	return n, nil
+}
+
+func (s *SQLiteStore) BulkDeleteIssues(ctx context.Context, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	// Delete issue_tags first (foreign key)
+	tagQuery := fmt.Sprintf("DELETE FROM issue_tags WHERE issue_id IN (%s)", strings.Join(placeholders, ","))
+	if _, err := tx.ExecContext(ctx, tagQuery, args...); err != nil {
+		return 0, fmt.Errorf("bulk delete issue tags: %w", err)
+	}
+
+	query := fmt.Sprintf("DELETE FROM issues WHERE id IN (%s)", strings.Join(placeholders, ","))
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("bulk delete issues: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit tx: %w", err)
+	}
+	return n, nil
 }
 
 // --- Tags ---

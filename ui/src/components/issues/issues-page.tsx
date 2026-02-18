@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ChevronDown, ChevronRight, Plus, Rocket, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { useIssues, useUpdateIssue, useDeleteIssue } from "@/hooks/use-issues";
+import { useIssues, useUpdateIssue, useDeleteIssue, useBulkUpdateIssueStatus, useBulkDeleteIssues } from "@/hooks/use-issues";
 import { useProjects } from "@/hooks/use-projects";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +70,8 @@ export function IssuesPage() {
   const { data: projectsData, isLoading: projectsLoading } = useProjects();
   const updateIssue = useUpdateIssue();
   const deleteIssue = useDeleteIssue();
+  const bulkUpdateStatus = useBulkUpdateIssueStatus();
+  const bulkDelete = useBulkDeleteIssues();
   const allIssues = issuesData ?? [];
   const projects = projectsData ?? [];
   const isLoading = issuesLoading || projectsLoading;
@@ -143,9 +145,7 @@ export function IssuesPage() {
   async function handleBulkStatusChange(status: IssueStatus) {
     const ids = Array.from(selectedIssues);
     try {
-      await Promise.all(
-        ids.map((id) => updateIssue.mutateAsync({ id, Status: status }))
-      );
+      await bulkUpdateStatus.mutateAsync({ ids, status });
       toast.success(`Updated ${ids.length} issue${ids.length > 1 ? "s" : ""} to ${status.replace("_", " ")}`);
       clearSelection();
     } catch (err) {
@@ -156,9 +156,7 @@ export function IssuesPage() {
   async function handleBulkDelete() {
     const ids = Array.from(selectedIssues);
     try {
-      for (const id of ids) {
-        await deleteIssue.mutateAsync(id);
-      }
+      await bulkDelete.mutateAsync(ids);
       toast.success(`Deleted ${ids.length} issue${ids.length > 1 ? "s" : ""}`);
       clearSelection();
     } catch (err) {

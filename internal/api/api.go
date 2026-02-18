@@ -54,6 +54,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects/{id}/issues", s.createProjectIssue)
 
 	mux.HandleFunc("GET /api/v1/issues", s.listIssues)
+	mux.HandleFunc("POST /api/v1/issues/bulk-update", s.bulkUpdateIssues)
+	mux.HandleFunc("POST /api/v1/issues/bulk-delete", s.bulkDeleteIssues)
 	mux.HandleFunc("GET /api/v1/issues/{id}", s.getIssue)
 	mux.HandleFunc("PUT /api/v1/issues/{id}", s.updateIssue)
 	mux.HandleFunc("DELETE /api/v1/issues/{id}", s.deleteIssue)
@@ -285,6 +287,51 @@ func (s *Server) deleteIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) bulkUpdateIssues(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs    []string `json:"ids"`
+		Status string   `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "ids is required")
+		return
+	}
+	if req.Status == "" {
+		writeError(w, http.StatusBadRequest, "status is required")
+		return
+	}
+	n, err := s.store.BulkUpdateIssueStatus(r.Context(), req.IDs, models.IssueStatus(req.Status))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"updated": n})
+}
+
+func (s *Server) bulkDeleteIssues(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "ids is required")
+		return
+	}
+	n, err := s.store.BulkDeleteIssues(r.Context(), req.IDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"deleted": n})
 }
 
 // --- Status ---

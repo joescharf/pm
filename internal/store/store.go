@@ -32,6 +32,8 @@ type Store interface {
 	ListIssues(ctx context.Context, filter IssueListFilter) ([]*models.Issue, error)
 	UpdateIssue(ctx context.Context, issue *models.Issue) error
 	DeleteIssue(ctx context.Context, id string) error
+	BulkUpdateIssueStatus(ctx context.Context, ids []string, status models.IssueStatus) (int64, error)
+	BulkDeleteIssues(ctx context.Context, ids []string) (int64, error)
 
 	// Tags
 	CreateTag(ctx context.Context, tag *models.Tag) error

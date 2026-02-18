@@ -149,6 +149,31 @@ func (m *mockStore) UpdateIssue(_ context.Context, issue *models.Issue) error {
 	return fmt.Errorf("issue not found: %s", issue.ID)
 }
 func (m *mockStore) DeleteIssue(_ context.Context, _ string) error { return nil }
+func (m *mockStore) BulkUpdateIssueStatus(_ context.Context, ids []string, status models.IssueStatus) (int64, error) {
+	var n int64
+	for _, id := range ids {
+		for _, i := range m.issues {
+			if i.ID == id {
+				i.Status = status
+				n++
+			}
+		}
+	}
+	return n, nil
+}
+func (m *mockStore) BulkDeleteIssues(_ context.Context, ids []string) (int64, error) {
+	var n int64
+	for _, id := range ids {
+		for idx, i := range m.issues {
+			if i.ID == id {
+				m.issues = append(m.issues[:idx], m.issues[idx+1:]...)
+				n++
+				break
+			}
+		}
+	}
+	return n, nil
+}
 
 func (m *mockStore) CreateTag(_ context.Context, tag *models.Tag) error {
 	m.tags = append(m.tags, tag)
