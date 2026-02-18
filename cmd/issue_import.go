@@ -160,10 +160,47 @@ func importWithProject(ctx context.Context, s store.Store, content, projectName 
 	return createExtractedIssues(ctx, s, issues)
 }
 
+// parseSubIssueNumber checks if a line starts with a sub-issue number like "1.1" or "2.3."
+// Returns the title text and true if it's a sub-issue, or empty and false otherwise.
+func parseSubIssueNumber(line string) (title string, ok bool) {
+	// Pattern: digits.digits[.] space text (e.g., "1.1 text" or "1.1. text")
+	i := 0
+	// First number
+	for i < len(line) && line[i] >= '0' && line[i] <= '9' {
+		i++
+	}
+	if i == 0 || i >= len(line) || line[i] != '.' {
+		return "", false
+	}
+	i++ // skip first dot
+	// Second number (must have at least one digit after the dot)
+	start := i
+	for i < len(line) && line[i] >= '0' && line[i] <= '9' {
+		i++
+	}
+	if i == start {
+		return "", false // no digits after dot — this is a regular "1. text" item
+	}
+	// Optional trailing dot (e.g., "1.1. text")
+	if i < len(line) && line[i] == '.' {
+		i++
+	}
+	// Must be followed by a space and text
+	if i >= len(line) || line[i] != ' ' {
+		return "", false
+	}
+	title = strings.TrimSpace(line[i:])
+	if title == "" {
+		return "", false
+	}
+	return title, true
+}
+
 // parseMarkdownIssues does a simple parse of markdown to extract numbered/bulleted items.
 func parseMarkdownIssues(content string) []llm.ExtractedIssue {
 	var issues []llm.ExtractedIssue
 	currentProject := ""
+	lastParentLine := "" // raw line of the last top-level numbered item
 
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
@@ -175,6 +212,23 @@ func parseMarkdownIssues(content string) []llm.ExtractedIssue {
 			if strings.HasPrefix(strings.ToLower(heading), "project ") {
 				currentProject = strings.TrimSpace(heading[8:])
 			}
+			lastParentLine = ""
+			continue
+		}
+
+		// Check for sub-issue first (e.g., "1.1 text", "2.3. text")
+		if subTitle, ok := parseSubIssueNumber(line); ok {
+			body := line
+			if lastParentLine != "" {
+				body = lastParentLine + "\n" + line
+			}
+			issues = append(issues, llm.ExtractedIssue{
+				Project:  currentProject,
+				Title:    subTitle,
+				Type:     classifyIssueType(subTitle),
+				Priority: classifyIssuePriority(subTitle),
+				Body:     body,
+			})
 			continue
 		}
 
@@ -201,6 +255,11 @@ func parseMarkdownIssues(content string) []llm.ExtractedIssue {
 		}
 
 		if title != "" {
+			// Track top-level numbered items as potential parents for sub-issues
+			// (only numbered items, not bullets, can be parents)
+			if !strings.HasPrefix(line, "- ") && !strings.HasPrefix(line, "* ") {
+				lastParentLine = line
+			}
 			issues = append(issues, llm.ExtractedIssue{
 				Project:  currentProject,
 				Title:    title,

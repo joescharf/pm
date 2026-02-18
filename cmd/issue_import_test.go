@@ -112,6 +112,79 @@ func TestParseMarkdownIssues(t *testing.T) {
 		assert.Equal(t, "- Add dark mode support", issues[1].Body)
 	})
 
+	t.Run("sub-issues include parent text in body", func(t *testing.T) {
+		md := `## Project test
+
+1. Authentication system
+1.1 Add login form
+1.2 Add password reset
+
+2. Database improvements
+2.1 Add connection pooling
+`
+		issues := parseMarkdownIssues(md)
+		require.Len(t, issues, 5)
+
+		// Parent issues have their own text as body
+		assert.Equal(t, "Authentication system", issues[0].Title)
+		assert.Equal(t, "1. Authentication system", issues[0].Body)
+
+		// Sub-issues include parent text + own text in body
+		assert.Equal(t, "Add login form", issues[1].Title)
+		assert.Equal(t, "1. Authentication system\n1.1 Add login form", issues[1].Body)
+
+		assert.Equal(t, "Add password reset", issues[2].Title)
+		assert.Equal(t, "1. Authentication system\n1.2 Add password reset", issues[2].Body)
+
+		// Second parent
+		assert.Equal(t, "Database improvements", issues[3].Title)
+		assert.Equal(t, "2. Database improvements", issues[3].Body)
+
+		// Sub-issue of second parent
+		assert.Equal(t, "Add connection pooling", issues[4].Title)
+		assert.Equal(t, "2. Database improvements\n2.1 Add connection pooling", issues[4].Body)
+	})
+
+	t.Run("sub-issues with dot suffix", func(t *testing.T) {
+		md := `## Project test
+
+1. Main feature
+1.1. Sub-feature with trailing dot
+`
+		issues := parseMarkdownIssues(md)
+		require.Len(t, issues, 2)
+
+		assert.Equal(t, "Sub-feature with trailing dot", issues[1].Title)
+		assert.Equal(t, "1. Main feature\n1.1. Sub-feature with trailing dot", issues[1].Body)
+	})
+
+	t.Run("sub-issues inherit parent project", func(t *testing.T) {
+		md := `## Project pm
+
+1. Parent feature
+1.1 Child task
+`
+		issues := parseMarkdownIssues(md)
+		require.Len(t, issues, 2)
+
+		assert.Equal(t, "pm", issues[0].Project)
+		assert.Equal(t, "pm", issues[1].Project)
+	})
+
+	t.Run("sub-issue without parent is standalone", func(t *testing.T) {
+		// Edge case: sub-issue numbering without a preceding parent
+		md := `## Project test
+
+1.1 Orphan sub-issue
+`
+		issues := parseMarkdownIssues(md)
+		require.Len(t, issues, 1)
+
+		assert.Equal(t, "Orphan sub-issue", issues[0].Title)
+		// No parent to prepend, so body is just the sub-issue line
+		assert.Equal(t, "1.1 Orphan sub-issue", issues[0].Body)
+	})
+
 	t.Run("empty file", func(t *testing.T) {
 		issues := parseMarkdownIssues("")
 		assert.Empty(t, issues)
