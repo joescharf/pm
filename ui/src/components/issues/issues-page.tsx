@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ChevronDown, ChevronRight, Plus, Rocket, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Rocket, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { useIssues, useUpdateIssue } from "@/hooks/use-issues";
+import { useIssues, useUpdateIssue, useDeleteIssue } from "@/hooks/use-issues";
 import { useProjects } from "@/hooks/use-projects";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -57,9 +65,11 @@ export function IssuesPage() {
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const { data: issuesData, isLoading: issuesLoading, error } = useIssues(filters);
   const { data: projectsData, isLoading: projectsLoading } = useProjects();
   const updateIssue = useUpdateIssue();
+  const deleteIssue = useDeleteIssue();
   const allIssues = issuesData ?? [];
   const projects = projectsData ?? [];
   const isLoading = issuesLoading || projectsLoading;
@@ -141,6 +151,20 @@ export function IssuesPage() {
     } catch (err) {
       toast.error(`Failed to update issues: ${(err as Error).message}`);
     }
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIssues);
+    try {
+      for (const id of ids) {
+        await deleteIssue.mutateAsync(id);
+      }
+      toast.success(`Deleted ${ids.length} issue${ids.length > 1 ? "s" : ""}`);
+      clearSelection();
+    } catch (err) {
+      toast.error(`Failed to delete issues: ${(err as Error).message}`);
+    }
+    setDeleteConfirmOpen(false);
   }
 
   useEffect(() => {
@@ -295,6 +319,14 @@ export function IssuesPage() {
             <Rocket className="h-4 w-4 mr-1" />
             Launch Agent
           </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => setDeleteConfirmOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete
+          </Button>
           <Button size="sm" variant="ghost" onClick={clearSelection}>
             <X className="h-4 w-4" />
           </Button>
@@ -312,6 +344,25 @@ export function IssuesPage() {
           onSuccess={clearSelection}
         />
       )}
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete {selectedIssues.size} issue{selectedIssues.size > 1 ? "s" : ""}?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. The selected issue{selectedIssues.size > 1 ? "s" : ""} will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleBulkDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

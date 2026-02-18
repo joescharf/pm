@@ -231,7 +231,7 @@ func (s *Server) handleProjectStatus(ctx context.Context, request mcp.CallToolRe
 // pm_list_issues
 func (s *Server) listIssuesTool() (mcp.Tool, server.ToolHandlerFunc) {
 	tool := mcp.NewTool("pm_list_issues",
-		mcp.WithDescription("List issues, optionally filtered by project, status, and/or priority. Returns a JSON array of issues."),
+		mcp.WithDescription("List issues, optionally filtered by project, status, and/or priority. Returns a JSON array of issues. Each issue has: title, description (short summary), body (raw original text with full context — use this for implementation details), status (open/in_progress/done/closed), priority (low/medium/high), type (feature/bug/chore), and tags."),
 		mcp.WithString("project", mcp.Description("Project name to filter by")),
 		mcp.WithString("status", mcp.Description("Status filter: open, in_progress, done, closed")),
 		mcp.WithString("priority", mcp.Description("Priority filter: low, medium, high")),

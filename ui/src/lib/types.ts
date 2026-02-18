@@ -24,6 +24,7 @@ export interface Issue {
   ProjectID: string;
   Title: string;
   Description: string;
+  Body: string;
   Status: IssueStatus;
   Priority: IssuePriority;
   Type: IssueType;

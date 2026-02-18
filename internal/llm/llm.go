@@ -17,7 +17,7 @@ type ExtractedIssue struct {
 	Description string `json:"description"`
 	Type        string `json:"type"`
 	Priority    string `json:"priority"`
-	Body        string `json:"-"` // raw text from import, not sent to/from LLM
+	Body        string `json:"body"` // raw source text for this specific issue
 }
 
 // Client wraps the Anthropic API for issue extraction.
@@ -47,12 +47,14 @@ func buildPrompt(content string, projects []string) (system string, user string)
 - "description": brief description of the issue (can be empty string if the title is self-explanatory)
 - "type": one of "feature", "bug", "chore"
 - "priority": one of "low", "medium", "high"
+- "body": the exact original source text from the input that relates to this specific issue (preserve formatting, include any sub-bullets, details, or context lines that belong to this issue)
 
 Rules:
 - Each numbered/bulleted item is one issue
 - Infer type from context (new capabilities = feature, problems = bug, maintenance = chore)
 - Default priority to "medium" unless context suggests otherwise
 - Match project names to the known projects list when possible
+- The "body" field must contain only the relevant portion of the original text for that issue, not the entire document
 - Return valid JSON only, no markdown fencing or explanation`
 
 	var sb strings.Builder

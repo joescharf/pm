@@ -11,6 +11,10 @@ ALL_TARGETS := build
 $(if $(wildcard ui/package.json),$(eval ALL_TARGETS += ui-build ui-embed))
 $(if $(wildcard docs/mkdocs.yml),$(eval ALL_TARGETS += docs-build))
 
+# Enforce build order: ui-build -> ui-embed -> build
+$(if $(wildcard ui/package.json),$(eval ui-embed: ui-build))
+$(if $(wildcard ui/package.json),$(eval build: ui-embed))
+
 .DEFAULT_GOAL := all
 
 ##@ App

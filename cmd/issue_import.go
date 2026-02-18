@@ -99,11 +99,6 @@ func importWithLLM(ctx context.Context, s store.Store, content string) error {
 		return nil
 	}
 
-	// Preserve the original markdown as body on each extracted issue
-	for i := range extracted {
-		extracted[i].Body = content
-	}
-
 	// Preview table
 	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority"})
 	for i, e := range extracted {

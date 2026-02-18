@@ -187,6 +187,18 @@ export function IssueDetail() {
         </Card>
       )}
 
+      {/* Body (raw import text) */}
+      {issue.Body && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Raw</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-sm whitespace-pre-wrap font-mono text-muted-foreground bg-muted rounded-md p-4">{issue.Body}</pre>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Edit Dialog */}
       <IssueForm open={editOpen} onOpenChange={setEditOpen} issue={issue} />
     </div>
