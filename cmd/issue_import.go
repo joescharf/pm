@@ -104,6 +104,9 @@ func importWithLLM(ctx context.Context, s store.Store, content string) error {
 	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority", "Status"})
 	dryRunTitleCache := make(map[string]map[string]bool)
 	for i, e := range extracted {
+		if isPlaceholderTitle(e.Title) {
+			continue
+		}
 		status := "new"
 		if importDryRun || dryRun {
 			// Check for duplicates in dry-run mode
@@ -173,6 +176,9 @@ func importWithProject(ctx context.Context, s store.Store, content, projectName 
 	}
 	table := ui.Table([]string{"#", "Project", "Title", "Type", "Priority", "Status"})
 	for i, e := range issues {
+		if isPlaceholderTitle(e.Title) {
+			continue
+		}
 		status := "new"
 		if importDryRun || dryRun {
 			if existingTitles[e.Title] {
@@ -328,6 +334,32 @@ func existingTitlesForProject(ctx context.Context, s store.Store, projectID stri
 	return titles, nil
 }
 
+// isPlaceholderTitle returns true if the title is empty or a known placeholder
+// that LLMs sometimes generate for empty project sections.
+func isPlaceholderTitle(title string) bool {
+	t := strings.TrimSpace(strings.ToLower(title))
+	if t == "" {
+		return true
+	}
+	placeholders := []string{
+		"no issues specified",
+		"no issues found",
+		"no issues",
+		"none",
+		"n/a",
+		"na",
+		"no issues listed",
+		"no issues identified",
+		"no issues to import",
+	}
+	for _, p := range placeholders {
+		if t == p {
+			return true
+		}
+	}
+	return false
+}
+
 // createExtractedIssues resolves projects and creates issues in the store.
 // It skips issues whose title already exists in the same project (duplicate detection).
 func createExtractedIssues(ctx context.Context, s store.Store, extracted []llm.ExtractedIssue) error {
@@ -339,6 +371,12 @@ func createExtractedIssues(ctx context.Context, s store.Store, extracted []llm.E
 	skipped := 0
 
 	for _, e := range extracted {
+		// Skip empty or placeholder titles (e.g., LLM generating "no issues specified")
+		if isPlaceholderTitle(e.Title) {
+			skipped++
+			continue
+		}
+
 		proj, ok := projectCache[e.Project]
 		if !ok {
 			p, err := s.GetProjectByName(ctx, e.Project)

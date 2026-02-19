@@ -301,6 +301,29 @@ func TestCreateExtractedIssues_Idempotent(t *testing.T) {
 		assert.True(t, titles["New D"])
 	})
 
+	t.Run("empty and placeholder titles are skipped", func(t *testing.T) {
+		s, proj := setupTestStore(t)
+		ctx := context.Background()
+
+		extracted := []llm.ExtractedIssue{
+			{Project: proj.Name, Title: "", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "   ", Type: "bug", Priority: "high"},
+			{Project: proj.Name, Title: "no issues specified", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "No issues found", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "N/A", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "none", Type: "feature", Priority: "medium"},
+			{Project: proj.Name, Title: "Real issue title", Type: "feature", Priority: "medium"},
+		}
+
+		err := createExtractedIssues(ctx, s, extracted)
+		require.NoError(t, err)
+
+		issues, err := s.ListIssues(ctx, store.IssueListFilter{ProjectID: proj.ID})
+		require.NoError(t, err)
+		assert.Len(t, issues, 1, "should only create the real issue, skipping empty/placeholder titles")
+		assert.Equal(t, "Real issue title", issues[0].Title)
+	})
+
 	t.Run("duplicates within same batch are caught", func(t *testing.T) {
 		s, proj := setupTestStore(t)
 		ctx := context.Background()

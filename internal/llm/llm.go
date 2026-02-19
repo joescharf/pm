@@ -56,6 +56,7 @@ Rules:
 - Match project names to the known projects list when possible
 - The "body" field must contain only the relevant portion of the original text for that issue, not the entire document
 - For sub-issues (e.g., "1.1 Sub-task", "2.1 Detail"), include the parent issue's text in the body field before the sub-issue text, as the parent may provide additional context. For example, if "1. Authentication system" has sub-issue "1.1 Add login form", the sub-issue body should be "1. Authentication system\n1.1 Add login form"
+- If a project section contains no issues, do NOT generate any entries for that project. Never create placeholder issues like "no issues specified" or "N/A"
 - Return valid JSON only, no markdown fencing or explanation`
 
 	var sb strings.Builder
