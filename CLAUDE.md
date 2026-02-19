@@ -26,6 +26,7 @@ pm issue update <id>            # --status, --title, --desc, --priority
 pm issue close <id>             # Close an issue
 pm issue link <id>              # --github <number>
 pm issue import <file>          # Import issues from markdown (--project, --dry-run); auto-classifies type/priority
+pm issue review <id>            # Show review history (--base-ref, --head-ref, --app-url)
 
 pm agent list [project]         # Active/idle sessions (default subcommand)
 pm agent launch <project>       # --issue, --branch (resumes idle sessions)
@@ -74,14 +75,17 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 | `pm_health_score` | Health score breakdown for a project (project required) |
 | `pm_launch_agent` | Create worktree + agent session, or resume idle session (project required; opt: issue_id, branch) |
 | `pm_close_agent` | Close agent session (session_id required; opt: status — idle/completed/abandoned) |
+| `pm_prepare_review` | Gather review context for an issue (issue_id required; opt: base_ref, head_ref, app_url) |
+| `pm_save_review` | Save review verdict and transition issue (issue_id + verdict + summary required; opt: categories, failure_reasons) |
+| `pm_update_project` | Update project metadata (project required; opt: description, build_cmd, serve_cmd, serve_port) |
 
 ## Key Patterns
 
 - **Short IDs**: First 12 chars of ULID (e.g., `01KHA4NVKG01`)
 - **Auto-detection**: `pm` and `pm issue` auto-detect project from cwd
-- **Issue lifecycle**: open -> in_progress -> done -> closed
+- **Issue lifecycle**: open -> in_progress -> done -> [AI review] -> closed (pass) / in_progress (fail)
 - **Session lifecycle**: active -> idle -> completed/abandoned (idle = worktree exists, no active Claude session)
-- **Issue cascading**: session completed -> issue done; session abandoned -> issue open
+- **Issue cascading**: session completed -> issue done; session abandoned -> issue open; review pass -> closed; review fail -> in_progress
 - **Priorities**: low, medium, high
 - **Types**: feature, bug, chore
 - **Config**: Uses `viper.SetDefault()` with nested keys like `github.default_org`
