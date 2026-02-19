@@ -60,6 +60,9 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("PUT /api/v1/issues/{id}", s.updateIssue)
 	mux.HandleFunc("DELETE /api/v1/issues/{id}", s.deleteIssue)
 
+	mux.HandleFunc("GET /api/v1/issues/{id}/reviews", s.listIssueReviews)
+	mux.HandleFunc("POST /api/v1/issues/{id}/reviews", s.createIssueReview)
+
 	mux.HandleFunc("GET /api/v1/status", s.statusOverview)
 	mux.HandleFunc("GET /api/v1/status/{id}", s.statusProject)
 
@@ -332,6 +335,63 @@ func (s *Server) bulkDeleteIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int64{"deleted": n})
+}
+
+// --- Issue Reviews ---
+
+func (s *Server) listIssueReviews(w http.ResponseWriter, r *http.Request) {
+	issueID := r.PathValue("id")
+	reviews, err := s.store.ListIssueReviews(r.Context(), issueID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if reviews == nil {
+		reviews = []*models.IssueReview{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(reviews)
+}
+
+func (s *Server) createIssueReview(w http.ResponseWriter, r *http.Request) {
+	issueID := r.PathValue("id")
+
+	var body struct {
+		Verdict           string   `json:"verdict"`
+		Summary           string   `json:"summary"`
+		CodeQuality       string   `json:"code_quality"`
+		RequirementsMatch string   `json:"requirements_match"`
+		TestCoverage      string   `json:"test_coverage"`
+		UIUX              string   `json:"ui_ux"`
+		FailureReasons    []string `json:"failure_reasons"`
+		DiffStats         string   `json:"diff_stats"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	review := &models.IssueReview{
+		IssueID:           issueID,
+		Verdict:           models.ReviewVerdict(body.Verdict),
+		Summary:           body.Summary,
+		CodeQuality:       models.ReviewCategory(body.CodeQuality),
+		RequirementsMatch: models.ReviewCategory(body.RequirementsMatch),
+		TestCoverage:      models.ReviewCategory(body.TestCoverage),
+		UIUX:              models.ReviewCategory(body.UIUX),
+		FailureReasons:    body.FailureReasons,
+		DiffStats:         body.DiffStats,
+		ReviewedAt:        time.Now().UTC(),
+	}
+
+	if err := s.store.CreateIssueReview(r.Context(), review); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(review)
 }
 
 // --- Status ---

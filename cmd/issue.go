@@ -25,6 +25,10 @@ var (
 	issueTag      string
 	issueAll      bool
 	issueGitHub   int
+
+	reviewBaseRef string
+	reviewHeadRef string
+	reviewAppURL  string
 )
 
 var issueCmd = &cobra.Command{
@@ -101,6 +105,16 @@ var issueLinkCmd = &cobra.Command{
 	},
 }
 
+var issueReviewCmd = &cobra.Command{
+	Use:   "review <issue-id>",
+	Short: "Show review history for an issue",
+	Long:  "Shows review history for an issue. Use MCP tool pm_prepare_review for full review context.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return issueReviewRun(args[0])
+	},
+}
+
 func init() {
 	issueAddCmd.Flags().StringVar(&issueTitle, "title", "", "Issue title (required)")
 	issueAddCmd.Flags().StringVar(&issueDesc, "desc", "", "Issue description")
@@ -124,12 +138,17 @@ func init() {
 	issueLinkCmd.Flags().IntVar(&issueGitHub, "github", 0, "GitHub issue number")
 	_ = issueLinkCmd.MarkFlagRequired("github")
 
+	issueReviewCmd.Flags().StringVar(&reviewBaseRef, "base-ref", "main", "Base ref for diff")
+	issueReviewCmd.Flags().StringVar(&reviewHeadRef, "head-ref", "", "Head ref for diff (default: session branch or HEAD)")
+	issueReviewCmd.Flags().StringVar(&reviewAppURL, "app-url", "", "URL of running app for UI review")
+
 	issueCmd.AddCommand(issueAddCmd)
 	issueCmd.AddCommand(issueListCmd)
 	issueCmd.AddCommand(issueShowCmd)
 	issueCmd.AddCommand(issueUpdateCmd)
 	issueCmd.AddCommand(issueCloseCmd)
 	issueCmd.AddCommand(issueLinkCmd)
+	issueCmd.AddCommand(issueReviewCmd)
 	rootCmd.AddCommand(issueCmd)
 }
 
@@ -392,6 +411,52 @@ func issueLinkRun(id string) error {
 	}
 
 	ui.Success("Linked issue %s to GitHub #%d", output.Cyan(shortID(issue.ID)), issueGitHub)
+	return nil
+}
+
+func issueReviewRun(id string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	issue, err := findIssue(ctx, s, id)
+	if err != nil {
+		return err
+	}
+
+	// Show review history
+	reviews, err := s.ListIssueReviews(ctx, issue.ID)
+	if err != nil {
+		return fmt.Errorf("list reviews: %w", err)
+	}
+
+	fmt.Fprintf(ui.Out, "\nIssue %s: %s (status: %s)\n\n",
+		output.Cyan(shortID(issue.ID)), issue.Title, string(issue.Status))
+
+	if len(reviews) == 0 {
+		ui.Info("No reviews yet")
+		fmt.Fprintln(ui.Out)
+		ui.Info("Use MCP tool pm_prepare_review to gather review context")
+		return nil
+	}
+
+	fmt.Fprintf(ui.Out, "Review History (%d reviews):\n\n", len(reviews))
+	for _, r := range reviews {
+		verdict := output.Green("PASS")
+		if r.Verdict == models.ReviewVerdictFail {
+			verdict = output.Red("FAIL")
+		}
+		fmt.Fprintf(ui.Out, "  %s  %s  %s\n", verdict, r.ReviewedAt.Format("2006-01-02 15:04"), r.Summary)
+		if len(r.FailureReasons) > 0 {
+			for _, reason := range r.FailureReasons {
+				fmt.Fprintf(ui.Out, "         - %s\n", reason)
+			}
+		}
+		fmt.Fprintln(ui.Out)
+	}
+
 	return nil
 }
 
