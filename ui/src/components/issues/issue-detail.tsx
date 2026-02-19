@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { Pencil, Trash2, ArrowLeft } from "lucide-react";
 import { useIssue, useDeleteIssue } from "@/hooks/use-issues";
+import { useIssueReviews } from "@/hooks/use-reviews";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,12 +12,124 @@ import { TimeAgo } from "@/components/shared/time-ago";
 import { StatusBadge, PriorityBadge } from "@/components/issues/status-badge";
 import { IssueForm } from "@/components/issues/issue-form";
 import { toast } from "sonner";
+import type { ReviewCategory } from "@/lib/types";
 
 const typeLabels: Record<string, string> = {
   feature: "Feature",
   bug: "Bug",
   chore: "Chore",
 };
+
+const categoryLabels: Record<ReviewCategory, { label: string; className: string }> = {
+  pass: {
+    label: "Pass",
+    className: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+  },
+  fail: {
+    label: "Fail",
+    className: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
+  },
+  skip: {
+    label: "Skip",
+    className: "bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300",
+  },
+  na: {
+    label: "N/A",
+    className: "bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300",
+  },
+};
+
+function CategoryBadge({ category, label }: { category: ReviewCategory; label: string }) {
+  const config = categoryLabels[category];
+  if (!config) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs">
+      <span className="text-muted-foreground">{label}:</span>
+      <Badge variant="outline" className={`border-transparent text-xs py-0 ${config.className}`}>
+        {config.label}
+      </Badge>
+    </span>
+  );
+}
+
+function ReviewHistory({ issueId }: { issueId: string }) {
+  const { data: reviews, isLoading } = useIssueReviews(issueId);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Reviews</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-16 rounded-lg" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const items = reviews ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Reviews</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No reviews yet</p>
+        ) : (
+          <div className="space-y-4">
+            {items.map((review) => (
+              <div key={review.ID} className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={
+                        review.Verdict === "pass"
+                          ? "border-transparent bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+                          : "border-transparent bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                      }
+                    >
+                      {review.Verdict === "pass" ? "Pass" : "Fail"}
+                    </Badge>
+                    {review.DiffStats && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {review.DiffStats}
+                      </span>
+                    )}
+                  </div>
+                  <TimeAgo date={review.ReviewedAt} className="text-sm text-muted-foreground" />
+                </div>
+
+                <p className="text-sm">{review.Summary}</p>
+
+                <div className="flex flex-wrap gap-3">
+                  <CategoryBadge category={review.CodeQuality} label="Code" />
+                  <CategoryBadge category={review.RequirementsMatch} label="Requirements" />
+                  <CategoryBadge category={review.TestCoverage} label="Tests" />
+                  <CategoryBadge category={review.UIUX} label="UI/UX" />
+                </div>
+
+                {review.Verdict === "fail" && review.FailureReasons && review.FailureReasons.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Failure Reasons:</p>
+                    <ul className="list-disc list-inside text-sm space-y-0.5">
+                      {review.FailureReasons.map((reason, i) => (
+                        <li key={i}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function IssueDetail() {
   const { id } = useParams<{ id: string }>();
@@ -198,6 +311,9 @@ export function IssueDetail() {
           </CardContent>
         </Card>
       )}
+
+      {/* Reviews */}
+      <ReviewHistory issueId={issue.ID} />
 
       {/* Edit Dialog */}
       <IssueForm open={editOpen} onOpenChange={setEditOpen} issue={issue} />

@@ -29,6 +29,9 @@ export function ProjectForm({ open, onOpenChange, project }: ProjectFormProps) {
   const [language, setLanguage] = useState("");
   const [repoURL, setRepoURL] = useState("");
   const [groupName, setGroupName] = useState("");
+  const [buildCmd, setBuildCmd] = useState("");
+  const [serveCmd, setServeCmd] = useState("");
+  const [servePort, setServePort] = useState<number | "">(0);
 
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
@@ -41,6 +44,9 @@ export function ProjectForm({ open, onOpenChange, project }: ProjectFormProps) {
       setLanguage(project?.Language ?? "");
       setRepoURL(project?.RepoURL ?? "");
       setGroupName(project?.GroupName ?? "");
+      setBuildCmd(project?.BuildCmd ?? "");
+      setServeCmd(project?.ServeCmd ?? "");
+      setServePort(project?.ServePort ?? 0);
     }
   }, [open, project]);
 
@@ -57,6 +63,9 @@ export function ProjectForm({ open, onOpenChange, project }: ProjectFormProps) {
       Language: language.trim(),
       RepoURL: repoURL.trim(),
       GroupName: groupName.trim(),
+      BuildCmd: buildCmd.trim(),
+      ServeCmd: serveCmd.trim(),
+      ServePort: typeof servePort === "number" ? servePort : 0,
     };
 
     if (isEdit) {
@@ -153,6 +162,39 @@ export function ProjectForm({ open, onOpenChange, project }: ProjectFormProps) {
               value={repoURL}
               onChange={(e) => setRepoURL(e.target.value)}
               placeholder="https://github.com/org/repo"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="buildCmd">Build Command</Label>
+              <Input
+                id="buildCmd"
+                value={buildCmd}
+                onChange={(e) => setBuildCmd(e.target.value)}
+                placeholder="e.g. npm run build"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="serveCmd">Serve Command</Label>
+              <Input
+                id="serveCmd"
+                value={serveCmd}
+                onChange={(e) => setServeCmd(e.target.value)}
+                placeholder="e.g. npm run dev"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="servePort">Serve Port</Label>
+            <Input
+              id="servePort"
+              type="number"
+              value={servePort === 0 ? "" : servePort}
+              onChange={(e) => setServePort(e.target.value ? parseInt(e.target.value, 10) : 0)}
+              placeholder="e.g. 3000"
             />
           </div>
 

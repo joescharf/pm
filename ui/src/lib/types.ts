@@ -11,6 +11,9 @@ export interface Project {
   BranchCount: number;
   HasGitHubPages: boolean;
   PagesURL: string;
+  BuildCmd: string;
+  ServeCmd: string;
+  ServePort: number;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -97,6 +100,25 @@ export interface StatusEntry {
   releaseDate?: string;
   versionSource?: string;
   releaseAssets?: ReleaseAsset[];
+}
+
+export type ReviewVerdict = "pass" | "fail";
+export type ReviewCategory = "pass" | "fail" | "skip" | "na";
+
+export interface IssueReview {
+  ID: string;
+  IssueID: string;
+  SessionID: string;
+  Verdict: ReviewVerdict;
+  Summary: string;
+  CodeQuality: ReviewCategory;
+  RequirementsMatch: ReviewCategory;
+  TestCoverage: ReviewCategory;
+  UIUX: ReviewCategory;
+  FailureReasons: string[] | null;
+  DiffStats: string;
+  ReviewedAt: string;
+  CreatedAt: string;
 }
 
 export interface LaunchAgentRequest {
