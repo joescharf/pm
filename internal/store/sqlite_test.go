@@ -584,6 +584,67 @@ func TestProjectBuildFields(t *testing.T) {
 	assert.Equal(t, "make build", got2.BuildCmd)
 }
 
+func TestIssueReviewCRUD(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Create a project + issue first
+	p := &models.Project{Name: "review-test", Path: "/tmp/review-test"}
+	require.NoError(t, s.CreateProject(ctx, p))
+	issue := &models.Issue{
+		ProjectID: p.ID, Title: "test issue",
+		Status: models.IssueStatusDone, Priority: models.IssuePriorityMedium,
+		Type: models.IssueTypeFeature,
+	}
+	require.NoError(t, s.CreateIssue(ctx, issue))
+
+	// Create a review
+	now := time.Now().UTC()
+	review := &models.IssueReview{
+		IssueID:           issue.ID,
+		SessionID:         "",
+		Verdict:           models.ReviewVerdictFail,
+		Summary:           "Missing test coverage for edge cases",
+		CodeQuality:       "pass",
+		RequirementsMatch: "pass",
+		TestCoverage:      "fail",
+		UIUX:              "na",
+		FailureReasons:    []string{"No tests for empty input", "No tests for error paths"},
+		DiffStats:         "3 files changed, 50 insertions(+), 10 deletions(-)",
+		ReviewedAt:        now,
+	}
+	require.NoError(t, s.CreateIssueReview(ctx, review))
+	assert.NotEmpty(t, review.ID)
+
+	// List reviews for issue
+	reviews, err := s.ListIssueReviews(ctx, issue.ID)
+	require.NoError(t, err)
+	require.Len(t, reviews, 1)
+	assert.Equal(t, models.ReviewVerdictFail, reviews[0].Verdict)
+	assert.Equal(t, "Missing test coverage for edge cases", reviews[0].Summary)
+	assert.Equal(t, models.ReviewCategory("fail"), reviews[0].TestCoverage)
+	assert.Equal(t, []string{"No tests for empty input", "No tests for error paths"}, reviews[0].FailureReasons)
+
+	// Add a second review (pass)
+	review2 := &models.IssueReview{
+		IssueID:           issue.ID,
+		Verdict:           models.ReviewVerdictPass,
+		Summary:           "All checks pass after fixes",
+		CodeQuality:       "pass",
+		RequirementsMatch: "pass",
+		TestCoverage:      "pass",
+		UIUX:              "na",
+		ReviewedAt:        now.Add(time.Hour),
+	}
+	require.NoError(t, s.CreateIssueReview(ctx, review2))
+
+	reviews, _ = s.ListIssueReviews(ctx, issue.ID)
+	assert.Len(t, reviews, 2)
+	// Most recent first
+	assert.Equal(t, models.ReviewVerdictPass, reviews[0].Verdict)
+	assert.Equal(t, models.ReviewVerdictFail, reviews[1].Verdict)
+}
+
 func TestListIssues_SortedByStatusThenPriority(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

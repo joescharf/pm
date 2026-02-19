@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -714,4 +715,60 @@ func (s *SQLiteStore) UpdateAgentSession(ctx context.Context, session *models.Ag
 		return fmt.Errorf("agent session not found: %s", session.ID)
 	}
 	return nil
+}
+
+// --- Issue Reviews ---
+
+func (s *SQLiteStore) CreateIssueReview(ctx context.Context, review *models.IssueReview) error {
+	if review.ID == "" {
+		review.ID = newULID()
+	}
+	review.CreatedAt = time.Now().UTC()
+
+	failureJSON, err := json.Marshal(review.FailureReasons)
+	if err != nil {
+		failureJSON = []byte("[]")
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO issue_reviews (id, issue_id, session_id, verdict, summary, code_quality, requirements_match, test_coverage, ui_ux, failure_reasons, diff_stats, reviewed_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		review.ID, review.IssueID, review.SessionID,
+		string(review.Verdict), review.Summary,
+		string(review.CodeQuality), string(review.RequirementsMatch),
+		string(review.TestCoverage), string(review.UIUX),
+		string(failureJSON), review.DiffStats,
+		review.ReviewedAt, review.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create issue review: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ListIssueReviews(ctx context.Context, issueID string) ([]*models.IssueReview, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, issue_id, session_id, verdict, summary, code_quality, requirements_match, test_coverage, ui_ux, failure_reasons, diff_stats, reviewed_at, created_at
+		FROM issue_reviews WHERE issue_id = ? ORDER BY reviewed_at DESC`, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("list issue reviews: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var reviews []*models.IssueReview
+	for rows.Next() {
+		r := &models.IssueReview{}
+		var failureJSON string
+		if err := rows.Scan(&r.ID, &r.IssueID, &r.SessionID,
+			&r.Verdict, &r.Summary,
+			&r.CodeQuality, &r.RequirementsMatch,
+			&r.TestCoverage, &r.UIUX,
+			&failureJSON, &r.DiffStats,
+			&r.ReviewedAt, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan issue review: %w", err)
+		}
+		_ = json.Unmarshal([]byte(failureJSON), &r.FailureReasons)
+		reviews = append(reviews, r)
+	}
+	return reviews, rows.Err()
 }

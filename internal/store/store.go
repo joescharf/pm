@@ -50,6 +50,10 @@ type Store interface {
 	ListAgentSessions(ctx context.Context, projectID string, limit int) ([]*models.AgentSession, error)
 	UpdateAgentSession(ctx context.Context, session *models.AgentSession) error
 
+	// Issue Reviews
+	CreateIssueReview(ctx context.Context, review *models.IssueReview) error
+	ListIssueReviews(ctx context.Context, issueID string) ([]*models.IssueReview, error)
+
 	// Lifecycle
 	Migrate(ctx context.Context) error
 	Close() error

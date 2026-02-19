@@ -30,6 +30,9 @@ type mockStore struct {
 	sessions []*models.AgentSession
 	tags     []*models.Tag
 
+	reviews        []*models.IssueReview
+	createdReviews []*models.IssueReview
+
 	// Track calls for verification.
 	createdIssues   []*models.Issue
 	updatedIssues   []*models.Issue
@@ -235,8 +238,28 @@ func (m *mockStore) UpdateAgentSession(_ context.Context, session *models.AgentS
 	}
 	return fmt.Errorf("session not found: %s", session.ID)
 }
-func (m *mockStore) Migrate(_ context.Context) error                                    { return nil }
-func (m *mockStore) Close() error                                                       { return nil }
+func (m *mockStore) Migrate(_ context.Context) error { return nil }
+func (m *mockStore) Close() error                    { return nil }
+
+func (m *mockStore) CreateIssueReview(_ context.Context, review *models.IssueReview) error {
+	if review.ID == "" {
+		review.ID = fmt.Sprintf("review-%d", len(m.reviews)+1)
+	}
+	review.CreatedAt = time.Now()
+	m.reviews = append(m.reviews, review)
+	m.createdReviews = append(m.createdReviews, review)
+	return nil
+}
+
+func (m *mockStore) ListIssueReviews(_ context.Context, issueID string) ([]*models.IssueReview, error) {
+	var result []*models.IssueReview
+	for _, r := range m.reviews {
+		if r.IssueID == issueID {
+			result = append(result, r)
+		}
+	}
+	return result, nil
+}
 
 // mockGitClient implements git.Client for testing.
 type mockGitClient struct {
