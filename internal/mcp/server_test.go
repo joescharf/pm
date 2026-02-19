@@ -89,7 +89,15 @@ func (m *mockStore) ListProjects(_ context.Context, group string) ([]*models.Pro
 	}
 	return filtered, nil
 }
-func (m *mockStore) UpdateProject(_ context.Context, _ *models.Project) error { return nil }
+func (m *mockStore) UpdateProject(_ context.Context, p *models.Project) error {
+	for i, existing := range m.projects {
+		if existing.ID == p.ID {
+			m.projects[i] = p
+			return nil
+		}
+	}
+	return fmt.Errorf("project not found: %s", p.ID)
+}
 func (m *mockStore) DeleteProject(_ context.Context, _ string) error          { return nil }
 
 func (m *mockStore) CreateIssue(_ context.Context, issue *models.Issue) error {
@@ -1143,6 +1151,144 @@ func TestCloseAgentTool_MissingSessionID(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Tests: pm_prepare_review
+// ---------------------------------------------------------------------------
+
+func TestPrepareReview(t *testing.T) {
+	ms := &mockStore{
+		projects: []*models.Project{{ID: "p1", Name: "myproject", Path: "/tmp/myproject", Language: "go"}},
+		issues: []*models.Issue{{
+			ID: "ISSUE001", ProjectID: "p1", Title: "Add login",
+			Description: "Implement login page", Body: "Full requirements...",
+			Status: models.IssueStatusDone, Priority: models.IssuePriorityMedium,
+			Type: models.IssueTypeFeature,
+		}},
+		sessions: []*models.AgentSession{{
+			ID: "s1", ProjectID: "p1", IssueID: "ISSUE001",
+			Branch: "feature/add-login", WorktreePath: "/tmp/myproject-feature-add-login",
+			Status: models.SessionStatusCompleted, CommitCount: 3,
+		}},
+	}
+	mg := &mockGitClient{
+		branches: []string{"main", "feature/add-login"},
+	}
+	srv := NewServer(ms, mg, nil, nil)
+	ctx := context.Background()
+
+	req := callToolReq("pm_prepare_review", map[string]any{
+		"issue_id": "ISSUE001",
+	})
+	result, err := srv.handlePrepareReview(ctx, req)
+	require.NoError(t, err)
+	require.False(t, result.IsError, "expected success but got error")
+
+	var out map[string]any
+	text := resultText(t, result)
+	require.NoError(t, json.Unmarshal([]byte(text), &out))
+	assert.Equal(t, "Add login", out["issue"].(map[string]any)["title"])
+	assert.Equal(t, false, out["ui_review_needed"])
+}
+
+// ---------------------------------------------------------------------------
+// Tests: pm_save_review
+// ---------------------------------------------------------------------------
+
+func TestSaveReview_Pass(t *testing.T) {
+	issue := &models.Issue{
+		ID: "ISSUE001", ProjectID: "p1", Title: "Add login",
+		Status: models.IssueStatusDone, Priority: models.IssuePriorityMedium,
+		Type: models.IssueTypeFeature,
+	}
+	ms := &mockStore{
+		projects: []*models.Project{{ID: "p1", Name: "myproject"}},
+		issues:   []*models.Issue{issue},
+	}
+	srv := NewServer(ms, nil, nil, nil)
+	ctx := context.Background()
+
+	req := callToolReq("pm_save_review", map[string]any{
+		"issue_id":           "ISSUE001",
+		"verdict":            "pass",
+		"summary":            "All checks pass",
+		"code_quality":       "pass",
+		"requirements_match": "pass",
+		"test_coverage":      "pass",
+		"ui_ux":              "na",
+	})
+	result, err := srv.handleSaveReview(ctx, req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	require.Len(t, ms.createdReviews, 1)
+	assert.Equal(t, models.ReviewVerdictPass, ms.createdReviews[0].Verdict)
+
+	require.Len(t, ms.updatedIssues, 1)
+	assert.Equal(t, models.IssueStatusClosed, ms.updatedIssues[0].Status)
+	assert.NotNil(t, ms.updatedIssues[0].ClosedAt)
+}
+
+func TestSaveReview_Fail(t *testing.T) {
+	issue := &models.Issue{
+		ID: "ISSUE002", ProjectID: "p1", Title: "Add search",
+		Status: models.IssueStatusDone, Priority: models.IssuePriorityMedium,
+		Type: models.IssueTypeFeature,
+	}
+	ms := &mockStore{
+		projects: []*models.Project{{ID: "p1", Name: "myproject"}},
+		issues:   []*models.Issue{issue},
+	}
+	srv := NewServer(ms, nil, nil, nil)
+	ctx := context.Background()
+
+	req := callToolReq("pm_save_review", map[string]any{
+		"issue_id":           "ISSUE002",
+		"verdict":            "fail",
+		"summary":            "Missing tests",
+		"code_quality":       "pass",
+		"requirements_match": "pass",
+		"test_coverage":      "fail",
+		"ui_ux":              "na",
+		"failure_reasons":    "No tests for empty input\nNo tests for error paths",
+	})
+	result, err := srv.handleSaveReview(ctx, req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	require.Len(t, ms.updatedIssues, 1)
+	assert.Equal(t, models.IssueStatusInProgress, ms.updatedIssues[0].Status)
+	assert.Nil(t, ms.updatedIssues[0].ClosedAt)
+}
+
+// ---------------------------------------------------------------------------
+// Tests: pm_update_project
+// ---------------------------------------------------------------------------
+
+func TestUpdateProject(t *testing.T) {
+	ms := &mockStore{
+		projects: []*models.Project{{ID: "p1", Name: "myproject", Path: "/tmp/myproject"}},
+	}
+	srv := NewServer(ms, nil, nil, nil)
+	ctx := context.Background()
+
+	req := callToolReq("pm_update_project", map[string]any{
+		"project":    "myproject",
+		"build_cmd":  "npm run build",
+		"serve_cmd":  "npm run dev",
+		"serve_port": "3000",
+	})
+	result, err := srv.handleUpdateProject(ctx, req)
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	var out map[string]any
+	text := resultText(t, result)
+	require.NoError(t, json.Unmarshal([]byte(text), &out))
+	assert.Equal(t, "npm run build", out["build_cmd"])
+	assert.Equal(t, "npm run dev", out["serve_cmd"])
+	assert.Equal(t, float64(3000), out["serve_port"])
+}
+
+// ---------------------------------------------------------------------------
 // Tests: Integration -- verify all tools are registered via HandleMessage
 // ---------------------------------------------------------------------------
 
@@ -1187,6 +1333,9 @@ func TestMCPIntegration_ListTools(t *testing.T) {
 		"pm_health_score",
 		"pm_launch_agent",
 		"pm_close_agent",
+		"pm_prepare_review",
+		"pm_save_review",
+		"pm_update_project",
 	}
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "expected tool %q to be registered", name)

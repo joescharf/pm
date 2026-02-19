@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +53,9 @@ func (s *Server) MCPServer() *server.MCPServer {
 	srv.AddTool(s.healthScoreTool())
 	srv.AddTool(s.launchAgentTool())
 	srv.AddTool(s.closeAgentTool())
+	srv.AddTool(s.prepareReviewTool())
+	srv.AddTool(s.saveReviewTool())
+	srv.AddTool(s.updateProjectTool())
 
 	return srv
 }
@@ -706,6 +710,304 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 	}
 	if session.EndedAt != nil {
 		result["ended_at"] = session.EndedAt.Format(time.RFC3339)
+	}
+
+	data, _ := json.Marshal(result)
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_prepare_review
+func (s *Server) prepareReviewTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_prepare_review",
+		mcp.WithDescription("Gather all context needed to review an issue's implementation. Returns issue requirements, git diff, changed files, UI review flags, and review history. The calling agent should analyze this context and then call pm_save_review with the verdict."),
+		mcp.WithString("issue_id", mcp.Required(), mcp.Description("Issue ID (full ULID or unique prefix)")),
+		mcp.WithString("base_ref", mcp.Description("Base ref for diff (default: main, or auto-detected from session branch)")),
+		mcp.WithString("head_ref", mcp.Description("Head ref for diff (default: session branch, or HEAD)")),
+		mcp.WithString("app_url", mcp.Description("URL of running app for UI/UX review via rodney (e.g. http://localhost:3000)")),
+	)
+	return tool, s.handlePrepareReview
+}
+
+func (s *Server) handlePrepareReview(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueID, err := request.RequireString("issue_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: issue_id"), nil
+	}
+
+	issue, err := s.findIssue(ctx, issueID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("issue not found: %s", issueID)), nil
+	}
+
+	project, err := s.store.GetProject(ctx, issue.ProjectID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("project not found for issue: %v", err)), nil
+	}
+
+	// Find linked session (most recent for this issue)
+	var session *models.AgentSession
+	sessions, _ := s.store.ListAgentSessions(ctx, project.ID, 0)
+	for _, sess := range sessions {
+		if sess.IssueID == issue.ID {
+			session = sess
+			break
+		}
+	}
+
+	// Determine diff refs
+	baseRef := request.GetString("base_ref", "main")
+	headRef := request.GetString("head_ref", "")
+	if headRef == "" && session != nil && session.Branch != "" {
+		headRef = session.Branch
+	}
+	if headRef == "" {
+		headRef = "HEAD"
+	}
+
+	// Get diff (best-effort)
+	var diff, diffStat string
+	var filesChanged []string
+	if s.git != nil && project.Path != "" {
+		diff, _ = s.git.Diff(project.Path, baseRef, headRef)
+		diffStat, _ = s.git.DiffStat(project.Path, baseRef, headRef)
+		filesChanged, _ = s.git.DiffNameOnly(project.Path, baseRef, headRef)
+	}
+
+	// Check if UI review is needed
+	uiReviewNeeded := false
+	for _, f := range filesChanged {
+		if strings.HasPrefix(f, "ui/") || strings.HasPrefix(f, "internal/ui/") {
+			uiReviewNeeded = true
+			break
+		}
+	}
+
+	// Build UI context
+	appURL := request.GetString("app_url", "")
+	uiContext := map[string]any{
+		"build_cmd":  project.BuildCmd,
+		"serve_cmd":  project.ServeCmd,
+		"serve_port": project.ServePort,
+		"app_url":    appURL,
+	}
+
+	// Fetch review history
+	reviews, _ := s.store.ListIssueReviews(ctx, issue.ID)
+	var reviewHistory []map[string]any
+	for _, r := range reviews {
+		reviewHistory = append(reviewHistory, map[string]any{
+			"verdict":     string(r.Verdict),
+			"summary":     r.Summary,
+			"reviewed_at": r.ReviewedAt.Format(time.RFC3339),
+		})
+	}
+
+	// Build session info
+	var sessionOut map[string]any
+	if session != nil {
+		sessionOut = map[string]any{
+			"id":            session.ID,
+			"branch":        session.Branch,
+			"worktree_path": session.WorktreePath,
+			"commit_count":  session.CommitCount,
+		}
+	}
+
+	result := map[string]any{
+		"issue": map[string]any{
+			"id":          issue.ID,
+			"title":       issue.Title,
+			"description": issue.Description,
+			"body":        issue.Body,
+			"type":        string(issue.Type),
+			"priority":    string(issue.Priority),
+			"status":      string(issue.Status),
+		},
+		"session":          sessionOut,
+		"diff":             diff,
+		"diff_stats":       diffStat,
+		"files_changed":    filesChanged,
+		"ui_review_needed": uiReviewNeeded,
+		"ui_context":       uiContext,
+		"review_history":   reviewHistory,
+		"project": map[string]any{
+			"name":     project.Name,
+			"path":     project.Path,
+			"language": project.Language,
+		},
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal review context: %v", err)), nil
+	}
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_save_review
+func (s *Server) saveReviewTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_save_review",
+		mcp.WithDescription("Save the result of an issue review. On pass, transitions issue to closed. On fail, transitions issue to in_progress with failure reasons. Creates a historical review record."),
+		mcp.WithString("issue_id", mcp.Required(), mcp.Description("Issue ID (full ULID or unique prefix)")),
+		mcp.WithString("verdict", mcp.Required(), mcp.Description("Review verdict: pass or fail")),
+		mcp.WithString("summary", mcp.Required(), mcp.Description("Narrative review summary")),
+		mcp.WithString("code_quality", mcp.Description("Code quality assessment: pass, fail, or skip")),
+		mcp.WithString("requirements_match", mcp.Description("Requirements match assessment: pass, fail, or skip")),
+		mcp.WithString("test_coverage", mcp.Description("Test coverage assessment: pass, fail, or skip")),
+		mcp.WithString("ui_ux", mcp.Description("UI/UX assessment: pass, fail, skip, or na")),
+		mcp.WithString("failure_reasons", mcp.Description("Newline-separated list of failure reasons (for fail verdicts)")),
+		mcp.WithString("diff_stats", mcp.Description("Diff statistics string")),
+	)
+	return tool, s.handleSaveReview
+}
+
+func (s *Server) handleSaveReview(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueID, err := request.RequireString("issue_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: issue_id"), nil
+	}
+	verdict, err := request.RequireString("verdict")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: verdict"), nil
+	}
+	summary, err := request.RequireString("summary")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: summary"), nil
+	}
+
+	if verdict != "pass" && verdict != "fail" {
+		return mcp.NewToolResultError("verdict must be 'pass' or 'fail'"), nil
+	}
+
+	issue, err := s.findIssue(ctx, issueID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("issue not found: %s", issueID)), nil
+	}
+
+	// Find linked session
+	var sessionID string
+	sessions, _ := s.store.ListAgentSessions(ctx, issue.ProjectID, 0)
+	for _, sess := range sessions {
+		if sess.IssueID == issue.ID {
+			sessionID = sess.ID
+			break
+		}
+	}
+
+	// Parse failure reasons
+	var failureReasons []string
+	if fr := request.GetString("failure_reasons", ""); fr != "" {
+		for _, line := range strings.Split(fr, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				failureReasons = append(failureReasons, line)
+			}
+		}
+	}
+
+	review := &models.IssueReview{
+		IssueID:           issue.ID,
+		SessionID:         sessionID,
+		Verdict:           models.ReviewVerdict(verdict),
+		Summary:           summary,
+		CodeQuality:       models.ReviewCategory(request.GetString("code_quality", "skip")),
+		RequirementsMatch: models.ReviewCategory(request.GetString("requirements_match", "skip")),
+		TestCoverage:      models.ReviewCategory(request.GetString("test_coverage", "skip")),
+		UIUX:              models.ReviewCategory(request.GetString("ui_ux", "na")),
+		FailureReasons:    failureReasons,
+		DiffStats:         request.GetString("diff_stats", ""),
+		ReviewedAt:        time.Now().UTC(),
+	}
+
+	if err := s.store.CreateIssueReview(ctx, review); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to save review: %v", err)), nil
+	}
+
+	// Transition issue status
+	if verdict == "pass" {
+		issue.Status = models.IssueStatusClosed
+		now := time.Now().UTC()
+		issue.ClosedAt = &now
+	} else {
+		issue.Status = models.IssueStatusInProgress
+		issue.ClosedAt = nil
+	}
+	if err := s.store.UpdateIssue(ctx, issue); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("review saved but issue update failed: %v", err)), nil
+	}
+
+	result := map[string]any{
+		"review_id":    review.ID,
+		"issue_id":     issue.ID,
+		"verdict":      verdict,
+		"issue_status": string(issue.Status),
+		"summary":      summary,
+	}
+
+	data, _ := json.Marshal(result)
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_update_project
+func (s *Server) updateProjectTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_update_project",
+		mcp.WithDescription("Update project metadata. Use this to persist discovered build/serve commands for automated UI review."),
+		mcp.WithString("project", mcp.Required(), mcp.Description("Project name")),
+		mcp.WithString("description", mcp.Description("New project description")),
+		mcp.WithString("build_cmd", mcp.Description("Build command (e.g. 'npm run build', 'make ui-build')")),
+		mcp.WithString("serve_cmd", mcp.Description("Dev server command (e.g. 'npm run dev', 'bun run dev')")),
+		mcp.WithString("serve_port", mcp.Description("Dev server port as string (e.g. '3000', '5173')")),
+	)
+	return tool, s.handleUpdateProject
+}
+
+func (s *Server) handleUpdateProject(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectName, err := request.RequireString("project")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: project"), nil
+	}
+
+	p, err := s.resolveProject(ctx, projectName)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("project not found: %s", projectName)), nil
+	}
+
+	updated := false
+
+	if desc := request.GetString("description", ""); desc != "" {
+		p.Description = desc
+		updated = true
+	}
+	if cmd := request.GetString("build_cmd", ""); cmd != "" {
+		p.BuildCmd = cmd
+		updated = true
+	}
+	if cmd := request.GetString("serve_cmd", ""); cmd != "" {
+		p.ServeCmd = cmd
+		updated = true
+	}
+	if portStr := request.GetString("serve_port", ""); portStr != "" {
+		if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+			p.ServePort = port
+			updated = true
+		}
+	}
+
+	if !updated {
+		return mcp.NewToolResultError("no fields provided to update"), nil
+	}
+
+	if err := s.store.UpdateProject(ctx, p); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to update project: %v", err)), nil
+	}
+
+	result := map[string]any{
+		"id":          p.ID,
+		"name":        p.Name,
+		"description": p.Description,
+		"build_cmd":   p.BuildCmd,
+		"serve_cmd":   p.ServeCmd,
+		"serve_port":  p.ServePort,
 	}
 
 	data, _ := json.Marshal(result)
