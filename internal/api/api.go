@@ -350,7 +350,7 @@ func (s *Server) listIssueReviews(w http.ResponseWriter, r *http.Request) {
 		reviews = []*models.IssueReview{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(reviews)
+	_ = json.NewEncoder(w).Encode(reviews)
 }
 
 func (s *Server) createIssueReview(w http.ResponseWriter, r *http.Request) {
@@ -391,7 +391,7 @@ func (s *Server) createIssueReview(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(review)
+	_ = json.NewEncoder(w).Encode(review)
 }
 
 // --- Status ---
