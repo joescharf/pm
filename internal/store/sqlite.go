@@ -151,10 +151,10 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, p *models.Project) erro
 	p.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO projects (id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, build_cmd, serve_cmd, serve_port, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, p.Path, p.Description, p.RepoURL, p.Language, p.GroupName,
-		p.BranchCount, boolToInt(p.HasGitHubPages), p.PagesURL, p.CreatedAt, p.UpdatedAt,
+		p.BranchCount, boolToInt(p.HasGitHubPages), p.PagesURL, p.BuildCmd, p.ServeCmd, p.ServePort, p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
@@ -165,9 +165,9 @@ func (s *SQLiteStore) CreateProject(ctx context.Context, p *models.Project) erro
 func (s *SQLiteStore) GetProject(ctx context.Context, id string) (*models.Project, error) {
 	p := &models.Project{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
+		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, build_cmd, serve_cmd, serve_port, created_at, updated_at
 		FROM projects WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.BuildCmd, &p.ServeCmd, &p.ServePort, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("project not found: %s", id)
 	}
@@ -180,9 +180,9 @@ func (s *SQLiteStore) GetProject(ctx context.Context, id string) (*models.Projec
 func (s *SQLiteStore) GetProjectByName(ctx context.Context, name string) (*models.Project, error) {
 	p := &models.Project{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
+		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, build_cmd, serve_cmd, serve_port, created_at, updated_at
 		FROM projects WHERE name = ?`, name,
-	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.BuildCmd, &p.ServeCmd, &p.ServePort, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("project not found: %s", name)
 	}
@@ -195,9 +195,9 @@ func (s *SQLiteStore) GetProjectByName(ctx context.Context, name string) (*model
 func (s *SQLiteStore) GetProjectByPath(ctx context.Context, path string) (*models.Project, error) {
 	p := &models.Project{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
+		`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, build_cmd, serve_cmd, serve_port, created_at, updated_at
 		FROM projects WHERE path = ?`, path,
-	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt)
+	).Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.BuildCmd, &p.ServeCmd, &p.ServePort, &p.CreatedAt, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("project not found at path: %s", path)
 	}
@@ -212,11 +212,11 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, group string) ([]*models
 	var err error
 	if group != "" {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
+			`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, build_cmd, serve_cmd, serve_port, created_at, updated_at
 			FROM projects WHERE group_name = ? ORDER BY name`, group)
 	} else {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, created_at, updated_at
+			`SELECT id, name, path, description, repo_url, language, group_name, branch_count, has_github_pages, pages_url, build_cmd, serve_cmd, serve_port, created_at, updated_at
 			FROM projects ORDER BY name`)
 	}
 	if err != nil {
@@ -227,7 +227,7 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, group string) ([]*models
 	var projects []*models.Project
 	for rows.Next() {
 		p := &models.Project{}
-		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Path, &p.Description, &p.RepoURL, &p.Language, &p.GroupName, &p.BranchCount, &p.HasGitHubPages, &p.PagesURL, &p.BuildCmd, &p.ServeCmd, &p.ServePort, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -238,10 +238,10 @@ func (s *SQLiteStore) ListProjects(ctx context.Context, group string) ([]*models
 func (s *SQLiteStore) UpdateProject(ctx context.Context, p *models.Project) error {
 	p.UpdatedAt = time.Now().UTC()
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE projects SET name=?, path=?, description=?, repo_url=?, language=?, group_name=?, branch_count=?, has_github_pages=?, pages_url=?, updated_at=?
+		`UPDATE projects SET name=?, path=?, description=?, repo_url=?, language=?, group_name=?, branch_count=?, has_github_pages=?, pages_url=?, build_cmd=?, serve_cmd=?, serve_port=?, updated_at=?
 		WHERE id=?`,
 		p.Name, p.Path, p.Description, p.RepoURL, p.Language, p.GroupName,
-		p.BranchCount, boolToInt(p.HasGitHubPages), p.PagesURL, p.UpdatedAt, p.ID,
+		p.BranchCount, boolToInt(p.HasGitHubPages), p.PagesURL, p.BuildCmd, p.ServeCmd, p.ServePort, p.UpdatedAt, p.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)

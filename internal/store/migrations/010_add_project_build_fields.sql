@@ -1,0 +1,3 @@
+ALTER TABLE projects ADD COLUMN build_cmd TEXT DEFAULT '';
+ALTER TABLE projects ADD COLUMN serve_cmd TEXT DEFAULT '';
+ALTER TABLE projects ADD COLUMN serve_port INTEGER DEFAULT 0;

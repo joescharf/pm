@@ -557,6 +557,33 @@ func TestSessionNewFields(t *testing.T) {
 	require.NotNil(t, got2.LastActiveAt)
 }
 
+func TestProjectBuildFields(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	p := &models.Project{
+		Name:      "build-test",
+		Path:      "/tmp/build-test",
+		BuildCmd:  "npm run build",
+		ServeCmd:  "npm run dev",
+		ServePort: 3000,
+	}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	got, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "npm run build", got.BuildCmd)
+	assert.Equal(t, "npm run dev", got.ServeCmd)
+	assert.Equal(t, 3000, got.ServePort)
+
+	// Update
+	got.BuildCmd = "make build"
+	require.NoError(t, s.UpdateProject(ctx, got))
+	got2, err := s.GetProject(ctx, p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "make build", got2.BuildCmd)
+}
+
 func TestListIssues_SortedByStatusThenPriority(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

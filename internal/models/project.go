@@ -14,6 +14,9 @@ type Project struct {
 	BranchCount    int
 	HasGitHubPages bool
 	PagesURL       string
+	BuildCmd       string
+	ServeCmd       string
+	ServePort      int
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
