@@ -1,6 +1,7 @@
 package git
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 
@@ -93,6 +94,54 @@ func TestLatestTag_WithTag(t *testing.T) {
 	tag, err := c.LatestTag(dir)
 	assert.NoError(t, err)
 	assert.Equal(t, "v1.0.0", tag)
+}
+
+func TestRealClient_Diff(t *testing.T) {
+	dir := t.TempDir()
+
+	// Init repo with main branch
+	cmds := [][]string{
+		{"git", "-C", dir, "init", "-b", "main"},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+	}
+	for _, args := range cmds {
+		require.NoError(t, exec.Command(args[0], args[1:]...).Run())
+	}
+
+	// Create initial file and commit on main
+	require.NoError(t, os.WriteFile(dir+"/file1.txt", []byte("hello\n"), 0644))
+	require.NoError(t, exec.Command("git", "-C", dir, "add", ".").Run())
+	require.NoError(t, exec.Command("git", "-C", dir, "commit", "-m", "initial").Run())
+
+	// Create feature branch, modify file and add new file
+	require.NoError(t, exec.Command("git", "-C", dir, "checkout", "-b", "feature").Run())
+	require.NoError(t, os.WriteFile(dir+"/file1.txt", []byte("hello world\n"), 0644))
+	require.NoError(t, os.WriteFile(dir+"/file2.txt", []byte("new file\n"), 0644))
+	require.NoError(t, exec.Command("git", "-C", dir, "add", ".").Run())
+	require.NoError(t, exec.Command("git", "-C", dir, "commit", "-m", "feature changes").Run())
+
+	c := NewClient()
+
+	t.Run("Diff returns diff content", func(t *testing.T) {
+		diff, err := c.Diff(dir, "main", "feature")
+		require.NoError(t, err)
+		assert.Contains(t, diff, "hello world")
+		assert.Contains(t, diff, "file2.txt")
+	})
+
+	t.Run("DiffStat returns stat summary", func(t *testing.T) {
+		stat, err := c.DiffStat(dir, "main", "feature")
+		require.NoError(t, err)
+		assert.Contains(t, stat, "file")
+		assert.Contains(t, stat, "changed")
+	})
+
+	t.Run("DiffNameOnly returns changed file names", func(t *testing.T) {
+		names, err := c.DiffNameOnly(dir, "main", "feature")
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"file1.txt", "file2.txt"}, names)
+	})
 }
 
 func TestLatestTag_MultipleTagsReturnsLatest(t *testing.T) {

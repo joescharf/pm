@@ -30,6 +30,9 @@ type Client interface {
 	LatestTag(path string) (string, error)
 	CommitCountSince(path, base string) (int, error)
 	AheadBehind(path, base string) (ahead int, behind int, err error)
+	Diff(path, base, head string) (string, error)
+	DiffStat(path, base, head string) (string, error)
+	DiffNameOnly(path, base, head string) ([]string, error)
 }
 
 // RealClient implements Client using real git commands.
@@ -147,6 +150,25 @@ func (c *RealClient) AheadBehind(path, base string) (ahead int, behind int, err 
 		return 0, 0, fmt.Errorf("parse ahead count: %w", err)
 	}
 	return ahead, behind, nil
+}
+
+func (c *RealClient) Diff(path, base, head string) (string, error) {
+	return gitCmd(path, "diff", base+"..."+head)
+}
+
+func (c *RealClient) DiffStat(path, base, head string) (string, error) {
+	return gitCmd(path, "diff", "--stat", base+"..."+head)
+}
+
+func (c *RealClient) DiffNameOnly(path, base, head string) ([]string, error) {
+	out, err := gitCmd(path, "diff", "--name-only", base+"..."+head)
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
 }
 
 // ParseWorktreeListPorcelain parses the output of `git worktree list --porcelain`.
