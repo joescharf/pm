@@ -36,7 +36,10 @@ func (m *mockGitClient) WorktreeList(path string) ([]git.WorktreeInfo, error) {
 func (m *mockGitClient) RemoteURL(path string) (string, error) { return m.remoteURL, nil }
 func (m *mockGitClient) LatestTag(path string) (string, error) { return "", nil }
 func (m *mockGitClient) CommitCountSince(path, base string) (int, error) { return 0, nil }
-func (m *mockGitClient) AheadBehind(path, base string) (int, int, error) { return 0, 0, nil }
+func (m *mockGitClient) AheadBehind(path, base string) (int, int, error)         { return 0, 0, nil }
+func (m *mockGitClient) Diff(path, base, head string) (string, error)            { return "", nil }
+func (m *mockGitClient) DiffStat(path, base, head string) (string, error)        { return "", nil }
+func (m *mockGitClient) DiffNameOnly(path, base, head string) ([]string, error)  { return nil, nil }
 
 // mockGitHubClient implements git.GitHubClient for testing.
 type mockGitHubClient struct {

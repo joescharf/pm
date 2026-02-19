@@ -272,6 +272,9 @@ func (m *mockGitClient) RemoteURL(_ string) (string, error) { return m.remoteURL
 func (m *mockGitClient) LatestTag(_ string) (string, error) { return m.latestTag, nil }
 func (m *mockGitClient) CommitCountSince(_, _ string) (int, error) { return 0, nil }
 func (m *mockGitClient) AheadBehind(_, _ string) (int, int, error) { return 0, 0, nil }
+func (m *mockGitClient) Diff(_, _, _ string) (string, error)       { return "", nil }
+func (m *mockGitClient) DiffStat(_, _, _ string) (string, error)   { return "", nil }
+func (m *mockGitClient) DiffNameOnly(_, _, _ string) ([]string, error) { return nil, nil }
 
 // mockGHClient implements git.GitHubClient for testing.
 type mockGHClient struct {

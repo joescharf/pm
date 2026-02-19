@@ -31,6 +31,9 @@ func (m *mockGitClient) RemoteURL(path string) (string, error)                  
 func (m *mockGitClient) LatestTag(path string) (string, error)                   { return "", nil }
 func (m *mockGitClient) CommitCountSince(path, base string) (int, error)         { return 0, nil }
 func (m *mockGitClient) AheadBehind(path, base string) (int, int, error)         { return 0, 0, nil }
+func (m *mockGitClient) Diff(path, base, head string) (string, error)           { return "", nil }
+func (m *mockGitClient) DiffStat(path, base, head string) (string, error)       { return "", nil }
+func (m *mockGitClient) DiffNameOnly(path, base, head string) ([]string, error) { return nil, nil }
 
 func TestEnrichSessionWithGitInfo_SetsFields(t *testing.T) {
 	session := &models.AgentSession{
