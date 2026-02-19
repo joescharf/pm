@@ -645,6 +645,62 @@ func TestIssueReviewCRUD(t *testing.T) {
 	assert.Equal(t, models.ReviewVerdictFail, reviews[1].Verdict)
 }
 
+func TestIssueAIPromptField(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	p := &models.Project{Name: "ai-prompt-test", Path: "/tmp/ai-prompt-test"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Create issue with AIPrompt
+	issue := &models.Issue{
+		ProjectID:   p.ID,
+		Title:       "Test AI prompt",
+		Description: "Short summary",
+		Body:        "Full body text",
+		AIPrompt:    "Focus on error handling and add unit tests for edge cases.",
+		Status:      models.IssueStatusOpen,
+		Priority:    models.IssuePriorityMedium,
+		Type:        models.IssueTypeFeature,
+	}
+	require.NoError(t, s.CreateIssue(ctx, issue))
+
+	// Get and verify AIPrompt round-trips
+	got, err := s.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Short summary", got.Description)
+	assert.Equal(t, "Full body text", got.Body)
+	assert.Equal(t, "Focus on error handling and add unit tests for edge cases.", got.AIPrompt)
+
+	// Update AIPrompt
+	got.AIPrompt = "Updated AI prompt guidance"
+	require.NoError(t, s.UpdateIssue(ctx, got))
+
+	got2, err := s.GetIssue(ctx, issue.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Updated AI prompt guidance", got2.AIPrompt)
+
+	// List also returns AIPrompt
+	issues, err := s.ListIssues(ctx, IssueListFilter{ProjectID: p.ID})
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	assert.Equal(t, "Updated AI prompt guidance", issues[0].AIPrompt)
+
+	// Empty AIPrompt defaults correctly
+	issue2 := &models.Issue{
+		ProjectID: p.ID,
+		Title:     "No AI prompt issue",
+		Status:    models.IssueStatusOpen,
+		Priority:  models.IssuePriorityLow,
+		Type:      models.IssueTypeChore,
+	}
+	require.NoError(t, s.CreateIssue(ctx, issue2))
+
+	got3, err := s.GetIssue(ctx, issue2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "", got3.AIPrompt)
+}
+
 func TestListIssues_SortedByStatusThenPriority(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

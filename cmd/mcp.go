@@ -81,7 +81,7 @@ func mcpServeRun() error {
 	ghc := git.NewGitHubClient()
 	wtc := wt.NewClient()
 
-	srv := pmcp.NewServer(s, gc, ghc, wtc)
+	srv := pmcp.NewServer(s, gc, ghc, wtc, newLLMClient())
 	return srv.ServeStdio(context.Background())
 }
 

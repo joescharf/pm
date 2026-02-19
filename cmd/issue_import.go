@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/joescharf/pm/internal/llm"
 	"github.com/joescharf/pm/internal/models"
@@ -67,15 +66,10 @@ func issueImportRun(file string) error {
 
 // importWithLLM uses Claude to extract and assign issues to projects.
 func importWithLLM(ctx context.Context, s store.Store, content string) error {
-	apiKey := viper.GetString("anthropic.api_key")
-	if apiKey == "" {
-		apiKey = os.Getenv("ANTHROPIC_API_KEY")
-	}
-	if apiKey == "" {
+	client := newLLMClient()
+	if client == nil {
 		return fmt.Errorf("ANTHROPIC_API_KEY not set (set env var or anthropic.api_key in config)")
 	}
-
-	model := viper.GetString("anthropic.model")
 
 	// Get known project names for the LLM
 	projects, err := s.ListProjects(ctx, "")
@@ -87,8 +81,7 @@ func importWithLLM(ctx context.Context, s store.Store, content string) error {
 		projectNames[i] = p.Name
 	}
 
-	ui.Info("Extracting issues with LLM (%s)...", model)
-	client := llm.NewClient(apiKey, model)
+	ui.Info("Extracting issues with LLM...")
 	extracted, err := client.ExtractIssues(ctx, content, projectNames)
 	if err != nil {
 		return fmt.Errorf("extract issues: %w", err)

@@ -277,9 +277,9 @@ func (s *SQLiteStore) CreateIssue(ctx context.Context, issue *models.Issue) erro
 	issue.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO issues (id, project_id, title, description, body, status, priority, type, github_issue, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		issue.ID, issue.ProjectID, issue.Title, issue.Description, issue.Body,
+		`INSERT INTO issues (id, project_id, title, description, body, ai_prompt, status, priority, type, github_issue, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		issue.ID, issue.ProjectID, issue.Title, issue.Description, issue.Body, issue.AIPrompt,
 		string(issue.Status), string(issue.Priority), string(issue.Type),
 		issue.GitHubIssue, issue.CreatedAt, issue.UpdatedAt,
 	)
@@ -295,9 +295,9 @@ func (s *SQLiteStore) GetIssue(ctx context.Context, id string) (*models.Issue, e
 	var closedAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, title, description, body, status, priority, type, github_issue, created_at, updated_at, closed_at
+		`SELECT id, project_id, title, description, body, ai_prompt, status, priority, type, github_issue, created_at, updated_at, closed_at
 		FROM issues WHERE id = ?`, id,
-	).Scan(&issue.ID, &issue.ProjectID, &issue.Title, &issue.Description, &issue.Body,
+	).Scan(&issue.ID, &issue.ProjectID, &issue.Title, &issue.Description, &issue.Body, &issue.AIPrompt,
 		&status, &priority, &issueType,
 		&issue.GitHubIssue, &issue.CreatedAt, &issue.UpdatedAt, &closedAt)
 
@@ -328,7 +328,7 @@ func (s *SQLiteStore) GetIssue(ctx context.Context, id string) (*models.Issue, e
 }
 
 func (s *SQLiteStore) ListIssues(ctx context.Context, filter IssueListFilter) ([]*models.Issue, error) {
-	query := `SELECT id, project_id, title, description, body, status, priority, type, github_issue, created_at, updated_at, closed_at FROM issues`
+	query := `SELECT id, project_id, title, description, body, ai_prompt, status, priority, type, github_issue, created_at, updated_at, closed_at FROM issues`
 	var conditions []string
 	var args []any
 
@@ -373,7 +373,7 @@ func (s *SQLiteStore) ListIssues(ctx context.Context, filter IssueListFilter) ([
 		var status, priority, issueType string
 		var closedAt sql.NullTime
 
-		if err := rows.Scan(&issue.ID, &issue.ProjectID, &issue.Title, &issue.Description, &issue.Body,
+		if err := rows.Scan(&issue.ID, &issue.ProjectID, &issue.Title, &issue.Description, &issue.Body, &issue.AIPrompt,
 			&status, &priority, &issueType,
 			&issue.GitHubIssue, &issue.CreatedAt, &issue.UpdatedAt, &closedAt); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
@@ -394,9 +394,9 @@ func (s *SQLiteStore) ListIssues(ctx context.Context, filter IssueListFilter) ([
 func (s *SQLiteStore) UpdateIssue(ctx context.Context, issue *models.Issue) error {
 	issue.UpdatedAt = time.Now().UTC()
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE issues SET title=?, description=?, body=?, status=?, priority=?, type=?, github_issue=?, updated_at=?, closed_at=?
+		`UPDATE issues SET title=?, description=?, body=?, ai_prompt=?, status=?, priority=?, type=?, github_issue=?, updated_at=?, closed_at=?
 		WHERE id=?`,
-		issue.Title, issue.Description, issue.Body, string(issue.Status), string(issue.Priority), string(issue.Type),
+		issue.Title, issue.Description, issue.Body, issue.AIPrompt, string(issue.Status), string(issue.Priority), string(issue.Type),
 		issue.GitHubIssue, issue.UpdatedAt, issue.ClosedAt, issue.ID,
 	)
 	if err != nil {

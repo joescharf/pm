@@ -1,0 +1,1 @@
+ALTER TABLE issues ADD COLUMN ai_prompt TEXT NOT NULL DEFAULT '';

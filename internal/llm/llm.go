@@ -122,3 +122,92 @@ func (c *Client) ExtractIssues(ctx context.Context, content string, projects []s
 
 	return issues, nil
 }
+
+// EnrichedIssue holds the LLM-generated enrichment fields for an issue.
+type EnrichedIssue struct {
+	Description string `json:"description"`
+	AIPrompt    string `json:"ai_prompt"`
+}
+
+// buildEnrichPrompt constructs the system and user prompts for issue enrichment.
+func buildEnrichPrompt(title, body, description string) (system string, user string) {
+	system = `You enrich issue data for a project management system. Given an issue's title, body, and optional description, return a JSON object with exactly two fields:
+
+- "description": A concise 1-3 sentence summary of what this issue is about. If a description is already provided, improve it for clarity. If no description exists, generate one from the title and body.
+- "ai_prompt": Detailed guidance (3-10 sentences) for an AI developer agent that will implement this issue. Include: what needs to be built or fixed, key technical considerations, suggested approach, files or areas likely affected, and acceptance criteria. Be specific and actionable.
+
+Rules:
+- Return valid JSON only, no markdown fencing or explanation
+- The description should be suitable for display in an issue tracker
+- The ai_prompt should be specific enough that an AI agent can start working on the issue immediately
+- If the body is empty, infer as much as possible from the title alone`
+
+	var sb strings.Builder
+	sb.WriteString("Issue title: ")
+	sb.WriteString(title)
+	sb.WriteString("\n")
+	if body != "" {
+		sb.WriteString("\nRaw body:\n")
+		sb.WriteString(body)
+		sb.WriteString("\n")
+	}
+	if description != "" {
+		sb.WriteString("\nExisting description: ")
+		sb.WriteString(description)
+		sb.WriteString("\n")
+	}
+	user = sb.String()
+	return
+}
+
+// EnrichIssue sends issue data to the LLM and returns enriched description and AI prompt.
+func (c *Client) EnrichIssue(ctx context.Context, title, body, description string) (*EnrichedIssue, error) {
+	systemPrompt, userPrompt := buildEnrichPrompt(title, body, description)
+
+	msg, err := c.api.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     c.model,
+		MaxTokens: 2048,
+		System: []anthropic.TextBlockParam{
+			{Text: systemPrompt},
+		},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt)),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("anthropic API call: %w", err)
+	}
+
+	// Extract text from response
+	var text string
+	for _, block := range msg.Content {
+		if block.Type == "text" {
+			text = block.Text
+			break
+		}
+	}
+
+	if text == "" {
+		return nil, fmt.Errorf("no text content in API response")
+	}
+
+	// Strip markdown fencing if present
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "```") {
+		lines := strings.SplitN(text, "\n", 2)
+		if len(lines) > 1 {
+			text = lines[1]
+		}
+		if idx := strings.LastIndex(text, "```"); idx >= 0 {
+			text = text[:idx]
+		}
+		text = strings.TrimSpace(text)
+	}
+
+	var enriched EnrichedIssue
+	if err := json.Unmarshal([]byte(text), &enriched); err != nil {
+		return nil, fmt.Errorf("parse LLM response as JSON: %w\nraw response: %s", err, text)
+	}
+
+	return &enriched, nil
+}

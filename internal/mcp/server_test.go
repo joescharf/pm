@@ -374,7 +374,7 @@ func newTestServer(t *testing.T) (*Server, *mockStore, *mockGitClient, *mockGHCl
 	ghc := &mockGHClient{}
 	wtc := &mockWTClient{}
 
-	srv := NewServer(ms, gc, ghc, wtc)
+	srv := NewServer(ms, gc, ghc, wtc, nil)
 	require.NotNil(t, srv)
 
 	return srv, ms, gc, ghc, wtc
@@ -1172,7 +1172,7 @@ func TestPrepareReview(t *testing.T) {
 	mg := &mockGitClient{
 		branches: []string{"main", "feature/add-login"},
 	}
-	srv := NewServer(ms, mg, nil, nil)
+	srv := NewServer(ms, mg, nil, nil, nil)
 	ctx := context.Background()
 
 	req := callToolReq("pm_prepare_review", map[string]any{
@@ -1203,7 +1203,7 @@ func TestSaveReview_Pass(t *testing.T) {
 		projects: []*models.Project{{ID: "p1", Name: "myproject"}},
 		issues:   []*models.Issue{issue},
 	}
-	srv := NewServer(ms, nil, nil, nil)
+	srv := NewServer(ms, nil, nil, nil, nil)
 	ctx := context.Background()
 
 	req := callToolReq("pm_save_review", map[string]any{
@@ -1237,7 +1237,7 @@ func TestSaveReview_Fail(t *testing.T) {
 		projects: []*models.Project{{ID: "p1", Name: "myproject"}},
 		issues:   []*models.Issue{issue},
 	}
-	srv := NewServer(ms, nil, nil, nil)
+	srv := NewServer(ms, nil, nil, nil, nil)
 	ctx := context.Background()
 
 	req := callToolReq("pm_save_review", map[string]any{
@@ -1267,7 +1267,7 @@ func TestUpdateProject(t *testing.T) {
 	ms := &mockStore{
 		projects: []*models.Project{{ID: "p1", Name: "myproject", Path: "/tmp/myproject"}},
 	}
-	srv := NewServer(ms, nil, nil, nil)
+	srv := NewServer(ms, nil, nil, nil, nil)
 	ctx := context.Background()
 
 	req := callToolReq("pm_update_project", map[string]any{

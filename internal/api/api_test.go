@@ -33,7 +33,7 @@ func setupTestServer(t *testing.T) (*Server, store.Store) {
 	gc := git.NewClient()
 	ghc := git.NewGitHubClient()
 	wtc := wt.NewClient()
-	srv := NewServer(s, gc, ghc, wtc)
+	srv := NewServer(s, gc, ghc, wtc, nil)
 
 	return srv, s
 }

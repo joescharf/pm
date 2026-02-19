@@ -12,6 +12,7 @@ import (
 	"github.com/joescharf/pm/internal/agent"
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/health"
+	"github.com/joescharf/pm/internal/llm"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/refresh"
 	"github.com/joescharf/pm/internal/store"
@@ -24,16 +25,19 @@ type Server struct {
 	git    git.Client
 	gh     git.GitHubClient
 	wt     wt.Client
+	llm    *llm.Client
 	scorer *health.Scorer
 }
 
 // NewServer creates a new API server.
-func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client) *Server {
+// The llmClient may be nil if no API key is configured.
+func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client, llmClient *llm.Client) *Server {
 	return &Server{
 		store:  s,
 		git:    gc,
 		gh:     ghc,
 		wt:     wtc,
+		llm:    llmClient,
 		scorer: health.NewScorer(),
 	}
 }
@@ -59,6 +63,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/issues/{id}", s.getIssue)
 	mux.HandleFunc("PUT /api/v1/issues/{id}", s.updateIssue)
 	mux.HandleFunc("DELETE /api/v1/issues/{id}", s.deleteIssue)
+	mux.HandleFunc("POST /api/v1/issues/{id}/enrich", s.enrichIssue)
 
 	mux.HandleFunc("GET /api/v1/issues/{id}/reviews", s.listIssueReviews)
 	mux.HandleFunc("POST /api/v1/issues/{id}/reviews", s.createIssueReview)
@@ -247,6 +252,20 @@ func (s *Server) createProjectIssue(w http.ResponseWriter, r *http.Request) {
 	if issue.Type == "" {
 		issue.Type = models.IssueTypeFeature
 	}
+
+	// Auto-enrich if LLM available and AIPrompt not already set
+	if s.llm != nil && issue.AIPrompt == "" {
+		enriched, err := s.llm.EnrichIssue(r.Context(), issue.Title, issue.Body, issue.Description)
+		if err == nil {
+			if issue.Description == "" && enriched.Description != "" {
+				issue.Description = enriched.Description
+			}
+			if enriched.AIPrompt != "" {
+				issue.AIPrompt = enriched.AIPrompt
+			}
+		}
+	}
+
 	if err := s.store.CreateIssue(r.Context(), &issue); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -290,6 +309,43 @@ func (s *Server) deleteIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) enrichIssue(w http.ResponseWriter, r *http.Request) {
+	if s.llm == nil {
+		writeError(w, http.StatusServiceUnavailable, "LLM not configured (set ANTHROPIC_API_KEY)")
+		return
+	}
+
+	id := r.PathValue("id")
+	issue, err := s.store.GetIssue(r.Context(), id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	enriched, err := s.llm.EnrichIssue(r.Context(), issue.Title, issue.Body, issue.Description)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("LLM enrichment failed: %v", err))
+		return
+	}
+
+	if enriched.Description != "" {
+		issue.Description = enriched.Description
+	}
+	if enriched.AIPrompt != "" {
+		issue.AIPrompt = enriched.AIPrompt
+	}
+
+	if err := s.store.UpdateIssue(r.Context(), issue); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, issue)
 }
 
 func (s *Server) bulkUpdateIssues(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
-import { Pencil, Trash2, ArrowLeft } from "lucide-react";
-import { useIssue, useDeleteIssue } from "@/hooks/use-issues";
+import { Pencil, Trash2, ArrowLeft, Sparkles } from "lucide-react";
+import { useIssue, useDeleteIssue, useEnrichIssue } from "@/hooks/use-issues";
 import { useIssueReviews } from "@/hooks/use-reviews";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -136,6 +136,7 @@ export function IssueDetail() {
   const navigate = useNavigate();
   const { data: issue, isLoading, error } = useIssue(id!);
   const deleteIssue = useDeleteIssue();
+  const enrichIssue = useEnrichIssue();
   const [editOpen, setEditOpen] = useState(false);
 
   const handleDelete = () => {
@@ -198,6 +199,20 @@ export function IssueDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              enrichIssue.mutate(issue.ID, {
+                onSuccess: () => toast.success("Issue enriched"),
+                onError: (err) => toast.error(`Enrichment failed: ${(err as Error).message}`),
+              });
+            }}
+            disabled={enrichIssue.isPending}
+          >
+            <Sparkles />
+            {enrichIssue.isPending ? "Enriching..." : "Enrich"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil />
             Edit
@@ -308,6 +323,18 @@ export function IssueDetail() {
           </CardHeader>
           <CardContent>
             <pre className="text-sm whitespace-pre-wrap font-mono text-muted-foreground bg-muted rounded-md p-4">{issue.Body}</pre>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI Prompt */}
+      {issue.AIPrompt && (
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Prompt</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-sm whitespace-pre-wrap font-mono text-muted-foreground bg-muted rounded-md p-4">{issue.AIPrompt}</pre>
           </CardContent>
         </Card>
       )}

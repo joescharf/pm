@@ -40,6 +40,8 @@ export function IssueForm({ open, onOpenChange, issue, defaultProjectId }: Issue
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [body, setBody] = useState("");
+  const [aiPrompt, setAiPrompt] = useState("");
   const [type, setType] = useState<IssueType>("feature");
   const [priority, setPriority] = useState<IssuePriority>("medium");
   const [status, setStatus] = useState<IssueStatus>("open");
@@ -50,6 +52,8 @@ export function IssueForm({ open, onOpenChange, issue, defaultProjectId }: Issue
         setProjectId(issue.ProjectID);
         setTitle(issue.Title);
         setDescription(issue.Description);
+        setBody(issue.Body ?? "");
+        setAiPrompt(issue.AIPrompt ?? "");
         setType(issue.Type);
         setPriority(issue.Priority);
         setStatus(issue.Status);
@@ -57,6 +61,8 @@ export function IssueForm({ open, onOpenChange, issue, defaultProjectId }: Issue
         setProjectId(defaultProjectId ?? "");
         setTitle("");
         setDescription("");
+        setBody("");
+        setAiPrompt("");
         setType("feature");
         setPriority("medium");
         setStatus("open");
@@ -82,6 +88,8 @@ export function IssueForm({ open, onOpenChange, issue, defaultProjectId }: Issue
           id: issue.ID,
           Title: title.trim(),
           Description: description,
+          Body: body,
+          AIPrompt: aiPrompt,
           Type: type,
           Priority: priority,
           Status: status,
@@ -102,6 +110,8 @@ export function IssueForm({ open, onOpenChange, issue, defaultProjectId }: Issue
           projectId,
           Title: title.trim(),
           Description: description,
+          Body: body,
+          AIPrompt: aiPrompt,
           Type: type,
           Priority: priority,
           Status: status,
@@ -123,7 +133,7 @@ export function IssueForm({ open, onOpenChange, issue, defaultProjectId }: Issue
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Issue" : "Create Issue"}</DialogTitle>
           <DialogDescription>
@@ -166,7 +176,29 @@ export function IssueForm({ open, onOpenChange, issue, defaultProjectId }: Issue
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe the issue..."
-              rows={4}
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="body">Raw Body</Label>
+            <Textarea
+              id="body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Original issue text or context..."
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="aiPrompt">AI Prompt</Label>
+            <Textarea
+              id="aiPrompt"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="Guidance for AI agents working on this issue..."
+              rows={3}
             />
           </div>
 

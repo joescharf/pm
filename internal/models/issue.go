@@ -37,6 +37,7 @@ type Issue struct {
 	Title       string
 	Description string
 	Body        string // raw/original text preserved from import
+	AIPrompt    string // LLM-generated guidance for AI agents working on this issue
 	Status      IssueStatus
 	Priority    IssuePriority
 	Type        IssueType

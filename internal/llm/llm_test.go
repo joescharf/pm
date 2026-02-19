@@ -46,3 +46,40 @@ func TestBuildPromptContent(t *testing.T) {
 	_, user := buildPrompt(content, []string{"a"})
 	assert.Contains(t, user, content)
 }
+
+func TestBuildEnrichPrompt(t *testing.T) {
+	t.Run("with all fields", func(t *testing.T) {
+		system, user := buildEnrichPrompt("Fix login bug", "When user clicks login, page crashes", "Login page crashes on submit")
+
+		assert.Contains(t, system, "description")
+		assert.Contains(t, system, "ai_prompt")
+		assert.Contains(t, system, "JSON")
+
+		assert.Contains(t, user, "Fix login bug")
+		assert.Contains(t, user, "When user clicks login, page crashes")
+		assert.Contains(t, user, "Login page crashes on submit")
+	})
+
+	t.Run("with only title", func(t *testing.T) {
+		system, user := buildEnrichPrompt("Add dark mode", "", "")
+
+		assert.Contains(t, system, "description")
+		assert.Contains(t, system, "ai_prompt")
+		assert.Contains(t, user, "Add dark mode")
+	})
+
+	t.Run("with title and body no description", func(t *testing.T) {
+		system, user := buildEnrichPrompt("Refactor auth", "The authentication module needs refactoring to use JWT tokens instead of session cookies", "")
+
+		assert.Contains(t, system, "JSON")
+		assert.Contains(t, user, "Refactor auth")
+		assert.Contains(t, user, "JWT tokens")
+	})
+
+	t.Run("system prompt specifies JSON format", func(t *testing.T) {
+		system, _ := buildEnrichPrompt("Test issue", "", "")
+
+		assert.Contains(t, system, `"description"`)
+		assert.Contains(t, system, `"ai_prompt"`)
+	})
+}

@@ -96,6 +96,18 @@ export function useBulkUpdateIssueStatus() {
   });
 }
 
+export function useEnrichIssue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<Issue>(`/api/v1/issues/${id}/enrich`, { method: "POST" }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["issues", id] });
+      qc.invalidateQueries({ queryKey: ["issues"] });
+    },
+  });
+}
+
 export function useBulkDeleteIssues() {
   const qc = useQueryClient();
   return useMutation({

@@ -19,12 +19,14 @@ var (
 	issueTitle    string
 	issueDesc     string
 	issueBody     string
+	issueAIPrompt string
 	issuePriority string
 	issueType     string
 	issueStatus   string
 	issueTag      string
 	issueAll      bool
 	issueGitHub   int
+	issueNoEnrich bool
 
 	reviewBaseRef string
 	reviewHeadRef string
@@ -119,9 +121,11 @@ func init() {
 	issueAddCmd.Flags().StringVar(&issueTitle, "title", "", "Issue title (required)")
 	issueAddCmd.Flags().StringVar(&issueDesc, "desc", "", "Issue description")
 	issueAddCmd.Flags().StringVar(&issueBody, "body", "", "Raw body text (e.g. original issue text)")
+	issueAddCmd.Flags().StringVar(&issueAIPrompt, "ai-prompt", "", "AI prompt (guidance for AI agents)")
 	issueAddCmd.Flags().StringVar(&issuePriority, "priority", "medium", "Priority: low, medium, high")
 	issueAddCmd.Flags().StringVar(&issueType, "type", "feature", "Type: feature, bug, chore")
 	issueAddCmd.Flags().StringVar(&issueTag, "tag", "", "Tag to apply")
+	issueAddCmd.Flags().BoolVar(&issueNoEnrich, "no-enrich", false, "Skip LLM enrichment")
 	_ = issueAddCmd.MarkFlagRequired("title")
 
 	issueListCmd.Flags().StringVar(&issueStatus, "status", "", "Filter by status: open, in_progress, done, closed")
@@ -134,6 +138,7 @@ func init() {
 	issueUpdateCmd.Flags().StringVar(&issueTitle, "title", "", "New title")
 	issueUpdateCmd.Flags().StringVar(&issueDesc, "desc", "", "New description")
 	issueUpdateCmd.Flags().StringVar(&issueBody, "body", "", "New body text")
+	issueUpdateCmd.Flags().StringVar(&issueAIPrompt, "ai-prompt", "", "New AI prompt")
 
 	issueLinkCmd.Flags().IntVar(&issueGitHub, "github", 0, "GitHub issue number")
 	_ = issueLinkCmd.MarkFlagRequired("github")
@@ -169,6 +174,7 @@ func issueAddRun(projectRef string) error {
 		Title:       issueTitle,
 		Description: issueDesc,
 		Body:        issueBody,
+		AIPrompt:    issueAIPrompt,
 		Status:      models.IssueStatusOpen,
 		Priority:    models.IssuePriority(issuePriority),
 		Type:        models.IssueType(issueType),
@@ -177,6 +183,24 @@ func issueAddRun(projectRef string) error {
 	if dryRun {
 		ui.DryRunMsg("Would add issue: %s [%s/%s] to %s", issueTitle, issuePriority, issueType, p.Name)
 		return nil
+	}
+
+	// LLM enrichment (non-fatal)
+	if !issueNoEnrich {
+		if client := newLLMClient(); client != nil {
+			ui.Info("Enriching issue with LLM...")
+			enriched, err := client.EnrichIssue(ctx, issue.Title, issue.Body, issue.Description)
+			if err != nil {
+				ui.Warning("LLM enrichment failed (issue will still be created): %v", err)
+			} else {
+				if issue.Description == "" && enriched.Description != "" {
+					issue.Description = enriched.Description
+				}
+				if issue.AIPrompt == "" && enriched.AIPrompt != "" {
+					issue.AIPrompt = enriched.AIPrompt
+				}
+			}
+		}
 	}
 
 	if err := s.CreateIssue(ctx, issue); err != nil {
@@ -292,6 +316,9 @@ func issueShowRun(id string) error {
 	if issue.Body != "" {
 		fmt.Fprintf(ui.Out, "  Body:       %s\n", issue.Body)
 	}
+	if issue.AIPrompt != "" {
+		fmt.Fprintf(ui.Out, "  AI Prompt:  %s\n", issue.AIPrompt)
+	}
 	if issue.GitHubIssue > 0 {
 		fmt.Fprintf(ui.Out, "  GitHub:     #%d\n", issue.GitHubIssue)
 	}
@@ -340,9 +367,13 @@ func issueUpdateRun(id string) error {
 		issue.Body = issueBody
 		changed = true
 	}
+	if issueAIPrompt != "" {
+		issue.AIPrompt = issueAIPrompt
+		changed = true
+	}
 
 	if !changed {
-		return fmt.Errorf("no updates specified (use --status, --priority, --title, --desc, or --body)")
+		return fmt.Errorf("no updates specified (use --status, --priority, --title, --desc, --body, or --ai-prompt)")
 	}
 
 	if dryRun {

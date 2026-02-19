@@ -119,8 +119,11 @@ func serveRun(ctx context.Context, isDaemon bool) error {
 		}
 	}()
 
+	// Create LLM client (may be nil if no API key configured)
+	llmClient := newLLMClient()
+
 	// Create API server.
-	apiServer := api.NewServer(s, gc, ghc, wtc)
+	apiServer := api.NewServer(s, gc, ghc, wtc, llmClient)
 
 	// Create UI handler.
 	uiHandler, err := embedui.Handler()
@@ -140,7 +143,7 @@ func serveRun(ctx context.Context, isDaemon bool) error {
 
 	// Start MCP StreamableHTTP server concurrently.
 	if mcpEnabled {
-		mcpSrv := pmcp.NewServer(s, gc, ghc, wtc)
+		mcpSrv := pmcp.NewServer(s, gc, ghc, wtc, llmClient)
 		httpMCP := server.NewStreamableHTTPServer(mcpSrv.MCPServer())
 		mcpAddr := fmt.Sprintf(":%d", mcpPort)
 		mcpURL := fmt.Sprintf("http://localhost%s/mcp", mcpAddr)

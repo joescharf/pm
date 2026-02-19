@@ -29,6 +29,7 @@ Thumbs.db
 
 # Build artifacts
 dist/
+!internal/ui/dist/
 build/
 
 # Environment
@@ -38,6 +39,8 @@ build/
 # UI (bun/React)
 ui/node_modules/
 internal/ui/dist/assets/
+# Make stamp files for freshness tracking
+*.stamp
 
 # Docs (mkdocs-material)
 docs/.venv/

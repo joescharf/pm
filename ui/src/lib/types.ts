@@ -28,6 +28,7 @@ export interface Issue {
   Title: string;
   Description: string;
   Body: string;
+  AIPrompt: string;
   Status: IssueStatus;
   Priority: IssuePriority;
   Type: IssueType;

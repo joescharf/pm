@@ -15,6 +15,7 @@ import (
 	"github.com/joescharf/pm/internal/agent"
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/health"
+	"github.com/joescharf/pm/internal/llm"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
@@ -26,16 +27,19 @@ type Server struct {
 	git    git.Client
 	gh     git.GitHubClient
 	wt     wt.Client
+	llm    *llm.Client
 	scorer *health.Scorer
 }
 
 // NewServer creates the MCP server wrapper with all required dependencies.
-func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client) *Server {
+// The llmClient may be nil if no API key is configured.
+func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client, llmClient *llm.Client) *Server {
 	return &Server{
 		store:  s,
 		git:    gc,
 		gh:     ghc,
 		wt:     wtc,
+		llm:    llmClient,
 		scorer: health.NewScorer(),
 	}
 }
@@ -235,7 +239,7 @@ func (s *Server) handleProjectStatus(ctx context.Context, request mcp.CallToolRe
 // pm_list_issues
 func (s *Server) listIssuesTool() (mcp.Tool, server.ToolHandlerFunc) {
 	tool := mcp.NewTool("pm_list_issues",
-		mcp.WithDescription("List issues, optionally filtered by project, status, and/or priority. Returns a JSON array of issues. Each issue has: title, description (short summary), body (raw original text with full context — use this for implementation details), status (open/in_progress/done/closed), priority (low/medium/high), type (feature/bug/chore), and tags."),
+		mcp.WithDescription("List issues, optionally filtered by project, status, and/or priority. Returns a JSON array of issues. Each issue has: title, description (short summary), body (raw original text with full context — use this for implementation details), ai_prompt (LLM-generated guidance for AI agents), status (open/in_progress/done/closed), priority (low/medium/high), type (feature/bug/chore), and tags."),
 		mcp.WithString("project", mcp.Description("Project name to filter by")),
 		mcp.WithString("status", mcp.Description("Status filter: open, in_progress, done, closed")),
 		mcp.WithString("priority", mcp.Description("Priority filter: low, medium, high")),
@@ -276,6 +280,7 @@ func (s *Server) handleListIssues(ctx context.Context, request mcp.CallToolReque
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
 		Body        string   `json:"body,omitempty"`
+		AIPrompt    string   `json:"ai_prompt,omitempty"`
 		Status      string   `json:"status"`
 		Priority    string   `json:"priority"`
 		Type        string   `json:"type"`
@@ -293,6 +298,7 @@ func (s *Server) handleListIssues(ctx context.Context, request mcp.CallToolReque
 			Title:       issue.Title,
 			Description: issue.Description,
 			Body:        issue.Body,
+			AIPrompt:    issue.AIPrompt,
 			Status:      string(issue.Status),
 			Priority:    string(issue.Priority),
 			Type:        string(issue.Type),
@@ -313,13 +319,15 @@ func (s *Server) handleListIssues(ctx context.Context, request mcp.CallToolReque
 // pm_create_issue
 func (s *Server) createIssueTool() (mcp.Tool, server.ToolHandlerFunc) {
 	tool := mcp.NewTool("pm_create_issue",
-		mcp.WithDescription("Create a new issue for a project. Returns the created issue as JSON."),
+		mcp.WithDescription("Create a new issue for a project. By default, uses LLM to generate a description and ai_prompt if not provided. Returns the created issue as JSON."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Project name")),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Issue title")),
 		mcp.WithString("description", mcp.Description("Issue description")),
 		mcp.WithString("body", mcp.Description("Raw body text (e.g. original issue text for full context)")),
+		mcp.WithString("ai_prompt", mcp.Description("AI prompt providing guidance for AI agents working on this issue")),
 		mcp.WithString("type", mcp.Description("Issue type: feature, bug, chore (default: feature)")),
 		mcp.WithString("priority", mcp.Description("Issue priority: low, medium, high (default: medium)")),
+		mcp.WithString("enrich", mcp.Description("Set to 'false' to skip LLM enrichment (default: true)")),
 	)
 	return tool, s.handleCreateIssue
 }
@@ -343,15 +351,32 @@ func (s *Server) handleCreateIssue(ctx context.Context, request mcp.CallToolRequ
 	priority := request.GetString("priority", "medium")
 	description := request.GetString("description", "")
 	body := request.GetString("body", "")
+	aiPrompt := request.GetString("ai_prompt", "")
+	enrich := request.GetString("enrich", "true")
 
 	issue := &models.Issue{
 		ProjectID:   p.ID,
 		Title:       title,
 		Description: description,
 		Body:        body,
+		AIPrompt:    aiPrompt,
 		Status:      models.IssueStatusOpen,
 		Priority:    models.IssuePriority(priority),
 		Type:        models.IssueType(issueType),
+	}
+
+	// LLM enrichment (non-fatal)
+	if enrich != "false" && s.llm != nil {
+		enriched, enrichErr := s.llm.EnrichIssue(ctx, issue.Title, issue.Body, issue.Description)
+		if enrichErr == nil {
+			if issue.Description == "" && enriched.Description != "" {
+				issue.Description = enriched.Description
+			}
+			if issue.AIPrompt == "" && enriched.AIPrompt != "" {
+				issue.AIPrompt = enriched.AIPrompt
+			}
+		}
+		// Silently ignore enrichment errors — issue will still be created
 	}
 
 	if err := s.store.CreateIssue(ctx, issue); err != nil {
@@ -365,6 +390,7 @@ func (s *Server) handleCreateIssue(ctx context.Context, request mcp.CallToolRequ
 		"title":       issue.Title,
 		"description": issue.Description,
 		"body":        issue.Body,
+		"ai_prompt":   issue.AIPrompt,
 		"status":      string(issue.Status),
 		"priority":    string(issue.Priority),
 		"type":        string(issue.Type),
@@ -387,6 +413,7 @@ func (s *Server) updateIssueTool() (mcp.Tool, server.ToolHandlerFunc) {
 		mcp.WithString("title", mcp.Description("New title")),
 		mcp.WithString("description", mcp.Description("New description")),
 		mcp.WithString("body", mcp.Description("New body text")),
+		mcp.WithString("ai_prompt", mcp.Description("New AI prompt (guidance for AI agents)")),
 		mcp.WithString("priority", mcp.Description("New priority: low, medium, high")),
 	)
 	return tool, s.handleUpdateIssue
@@ -427,13 +454,17 @@ func (s *Server) handleUpdateIssue(ctx context.Context, request mcp.CallToolRequ
 		issue.Body = body
 		updated = true
 	}
+	if aiPrompt := request.GetString("ai_prompt", ""); aiPrompt != "" {
+		issue.AIPrompt = aiPrompt
+		updated = true
+	}
 	if priority := request.GetString("priority", ""); priority != "" {
 		issue.Priority = models.IssuePriority(priority)
 		updated = true
 	}
 
 	if !updated {
-		return mcp.NewToolResultError("no fields provided to update; specify at least one of: status, title, description, body, priority"), nil
+		return mcp.NewToolResultError("no fields provided to update; specify at least one of: status, title, description, body, ai_prompt, priority"), nil
 	}
 
 	if err := s.store.UpdateIssue(ctx, issue); err != nil {
@@ -446,6 +477,7 @@ func (s *Server) handleUpdateIssue(ctx context.Context, request mcp.CallToolRequ
 		"title":       issue.Title,
 		"description": issue.Description,
 		"body":        issue.Body,
+		"ai_prompt":   issue.AIPrompt,
 		"status":      string(issue.Status),
 		"priority":    string(issue.Priority),
 		"type":        string(issue.Type),
@@ -819,6 +851,7 @@ func (s *Server) handlePrepareReview(ctx context.Context, request mcp.CallToolRe
 			"title":       issue.Title,
 			"description": issue.Description,
 			"body":        issue.Body,
+			"ai_prompt":   issue.AIPrompt,
 			"type":        string(issue.Type),
 			"priority":    string(issue.Priority),
 			"status":      string(issue.Status),

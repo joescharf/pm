@@ -20,9 +20,9 @@ pm project scan <dir>           # Auto-discover git repos
 pm project refresh [name]       # Re-detect metadata
 
 pm issue list [project]         # List issues (default subcommand)
-pm issue add [project]          # --title (required), --desc, --priority, --type, --tag
-pm issue show <id>              # Show issue details (accepts short IDs)
-pm issue update <id>            # --status, --title, --desc, --priority
+pm issue add [project]          # --title (required), --desc, --priority, --type, --tag, --ai-prompt, --no-enrich
+pm issue show <id>              # Show issue details (accepts short IDs); displays AI Prompt
+pm issue update <id>            # --status, --title, --desc, --priority, --ai-prompt
 pm issue close <id>             # Close an issue
 pm issue link <id>              # --github <number>
 pm issue import <file>          # Import issues from markdown (--project, --dry-run); auto-classifies type/priority
@@ -69,9 +69,9 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 |------|-------------|
 | `pm_list_projects` | List all projects (opt: group filter) |
 | `pm_project_status` | Full project status with git info + health (project required) |
-| `pm_list_issues` | List issues (opt: project, status, priority) |
-| `pm_create_issue` | Create issue (project + title required; opt: description, type, priority) |
-| `pm_update_issue` | Update issue fields (issue_id required; opt: status, title, description, priority) |
+| `pm_list_issues` | List issues with ai_prompt in output (opt: project, status, priority) |
+| `pm_create_issue` | Create issue with auto LLM enrichment (project + title required; opt: description, type, priority, ai_prompt, enrich) |
+| `pm_update_issue` | Update issue fields (issue_id required; opt: status, title, description, priority, ai_prompt) |
 | `pm_health_score` | Health score breakdown for a project (project required) |
 | `pm_launch_agent` | Create worktree + agent session, or resume idle session (project required; opt: issue_id, branch) |
 | `pm_close_agent` | Close agent session (session_id required; opt: status — idle/completed/abandoned) |
@@ -91,6 +91,8 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 - **Config**: Uses `viper.SetDefault()` with nested keys like `github.default_org`
 - **Store init**: Lazy via `getStore()` -- only when commands need DB
 - **ULID keys**: All entities use ULID primary keys
+- **LLM enrichment**: Issues are auto-enriched on creation (CLI, MCP, API) when an Anthropic API key is configured. Generates `Description` (summary) and `AIPrompt` (agent guidance). Skip with `--no-enrich` (CLI) or `enrich=false` (MCP). Manual enrichment via `POST /api/v1/issues/{id}/enrich` or UI Enrich button.
+- **AI Prompt field**: `AIPrompt` on issues provides structured guidance for AI agents working on the issue. Agents should read this field for implementation context.
 
 ## Development
 

@@ -6,21 +6,27 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)"
 
-# Conditionally include UI and docs targets if their directories exist
-ALL_TARGETS := build
-$(if $(wildcard ui/package.json),$(eval ALL_TARGETS += ui-build ui-embed))
-$(if $(wildcard docs/mkdocs.yml),$(eval ALL_TARGETS += docs-build))
+# Source file sets for freshness checks
+GO_SOURCES := $(shell find . -name '*.go' -not -path './bin/*' 2>/dev/null)
+UI_SOURCES := $(shell find ui/src ui/public -type f 2>/dev/null) ui/build.ts ui/package.json ui/tsconfig.json
+UI_DIST_STAMP := ui/dist/.stamp
+UI_EMBED_STAMP := internal/ui/dist/.stamp
+UI_NODE_MODULES := ui/node_modules/.stamp
 
-# Enforce build order: ui-build -> ui-embed -> build
-$(if $(wildcard ui/package.json),$(eval ui-embed: ui-build))
-$(if $(wildcard ui/package.json),$(eval build: ui-embed))
+# Conditionally include UI and docs targets if their directories exist
+ALL_TARGETS := bin/$(BINARY_NAME)
+$(if $(wildcard ui/package.json),$(eval ALL_TARGETS += $(UI_EMBED_STAMP)))
+$(if $(wildcard docs/mkdocs.yml),$(eval ALL_TARGETS += docs-build))
 
 .DEFAULT_GOAL := all
 
 ##@ App
 .PHONY: build install run serve clean tidy test lint vet fmt mocks
 
-build: ## Build the Go binary
+build: bin/$(BINARY_NAME) ## Build the Go binary
+
+# The Go binary depends on all Go sources + embedded UI assets
+bin/$(BINARY_NAME): $(GO_SOURCES) $(if $(wildcard ui/package.json),$(UI_EMBED_STAMP))
 	go build $(LDFLAGS) -o bin/$(BINARY_NAME) .
 
 install: ## Install the binary to $GOPATH/bin
@@ -35,6 +41,7 @@ serve: all ## Start the embedded web UI server
 clean: ## Remove build artifacts
 	rm -rf bin/
 	rm -f coverage.out
+	rm -f $(UI_DIST_STAMP) $(UI_EMBED_STAMP)
 
 tidy: ## Run go mod tidy
 	go mod tidy
@@ -88,22 +95,31 @@ docs-deps: ## Install doc dependencies (requires uv + docs/ directory)
 ##@ UI (React/shadcn via bun)
 .PHONY: ui-dev ui-build ui-embed ui-deps
 
-ui-dev: ## Start UI dev server (requires bun + ui/ directory)
-	@[ -d ui ] && [ -f ui/package.json ] || { echo "No ui/ directory found. Re-run gsi with --ui to create one."; exit 1; }
+# Sentinel: bun install only runs when package.json or lockfile change
+$(UI_NODE_MODULES): ui/package.json $(wildcard ui/bun.lock ui/bun.lockb)
+	cd ui && bun install
+	@touch $@
+
+ui-deps: $(UI_NODE_MODULES) ## Install UI dependencies
+
+ui-dev: $(UI_NODE_MODULES) ## Start UI dev server
 	cd ui && bun dev
 
-ui-build: ## Build UI for production (requires bun + ui/ directory)
-	@[ -d ui ] && [ -f ui/package.json ] || { echo "No ui/ directory found. Re-run gsi with --ui to create one."; exit 1; }
+# Build UI only when sources are newer than last build
+$(UI_DIST_STAMP): $(UI_NODE_MODULES) $(UI_SOURCES)
 	cd ui && bun run build
+	@touch $@
 
-ui-embed: ## Copy built UI into internal/ui/dist for embedding
+ui-build: $(UI_DIST_STAMP) ## Build UI for production
+
+# Embed UI only when dist is newer than last embed
+$(UI_EMBED_STAMP): $(UI_DIST_STAMP)
 	@[ -d ui/dist ] || { echo "No ui/dist/ directory found. Run 'make ui-build' first."; exit 1; }
 	rm -rf internal/ui/dist/*
 	cp -r ui/dist/* internal/ui/dist/
+	@touch $@
 
-ui-deps: ## Install UI dependencies (requires bun + ui/ directory)
-	@[ -d ui ] && [ -f ui/package.json ] || { echo "No ui/ directory found. Re-run gsi with --ui to create one."; exit 1; }
-	cd ui && bun install
+ui-embed: $(UI_EMBED_STAMP) ## Copy built UI into internal/ui/dist for embedding
 
 ##@ All
 .PHONY: all deps dev
