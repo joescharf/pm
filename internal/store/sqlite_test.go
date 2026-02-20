@@ -701,6 +701,59 @@ func TestIssueAIPromptField(t *testing.T) {
 	assert.Equal(t, "", got3.AIPrompt)
 }
 
+func TestDeleteStaleSessions(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	// Create project
+	p := &models.Project{Name: "stale-test", Path: "/tmp/stale-test"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	now := time.Now().UTC()
+
+	// Create a stale abandoned session (0 commits, ended 10s after started)
+	staleEnded := now.Add(10 * time.Second)
+	staleSession := &models.AgentSession{
+		ProjectID:    p.ID,
+		Branch:       "feature/stale-branch",
+		WorktreePath: "/tmp/stale-test-wt1",
+		Status:       models.SessionStatusAbandoned,
+		CommitCount:  0,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, staleSession))
+	// Manually set ended_at to make it a short-lived session
+	staleSession.Status = models.SessionStatusAbandoned
+	staleSession.EndedAt = &staleEnded
+	require.NoError(t, s.UpdateAgentSession(ctx, staleSession))
+
+	// Create a non-stale abandoned session (has 3 commits)
+	nonStaleEnded := now.Add(10 * time.Second)
+	nonStaleSession := &models.AgentSession{
+		ProjectID:    p.ID,
+		Branch:       "feature/stale-branch",
+		WorktreePath: "/tmp/stale-test-wt2",
+		Status:       models.SessionStatusAbandoned,
+		CommitCount:  0,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, nonStaleSession))
+	nonStaleSession.Status = models.SessionStatusAbandoned
+	nonStaleSession.CommitCount = 3
+	nonStaleSession.EndedAt = &nonStaleEnded
+	require.NoError(t, s.UpdateAgentSession(ctx, nonStaleSession))
+
+	// Call DeleteStaleSessions
+	count, err := s.DeleteStaleSessions(ctx, p.ID, "feature/stale-branch")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	// Verify only non-stale session remains
+	sessions, err := s.ListAgentSessions(ctx, p.ID, 0)
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, nonStaleSession.ID, sessions[0].ID)
+	assert.Equal(t, 3, sessions[0].CommitCount)
+}
+
 func TestListIssues_SortedByStatusThenPriority(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

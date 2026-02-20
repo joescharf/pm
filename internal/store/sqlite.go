@@ -801,6 +801,21 @@ func (s *SQLiteStore) UpdateAgentSession(ctx context.Context, session *models.Ag
 	return nil
 }
 
+func (s *SQLiteStore) DeleteStaleSessions(ctx context.Context, projectID, branch string) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM agent_sessions
+		WHERE project_id = ? AND branch = ?
+		AND status = 'abandoned' AND commit_count = 0
+		AND ended_at IS NOT NULL
+		AND (julianday(substr(ended_at, 1, 19)) - julianday(substr(started_at, 1, 19))) * 86400 < 60`,
+		projectID, branch,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete stale sessions: %w", err)
+	}
+	return res.RowsAffected()
+}
+
 // --- Issue Reviews ---
 
 func (s *SQLiteStore) CreateIssueReview(ctx context.Context, review *models.IssueReview) error {

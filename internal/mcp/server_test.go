@@ -284,6 +284,9 @@ func (m *mockStore) ListAgentSessionsByWorktreePaths(_ context.Context, paths []
 	}
 	return result, nil
 }
+func (m *mockStore) DeleteStaleSessions(_ context.Context, _, _ string) (int64, error) {
+	return 0, nil
+}
 func (m *mockStore) Migrate(_ context.Context) error { return nil }
 func (m *mockStore) Close() error                    { return nil }
 

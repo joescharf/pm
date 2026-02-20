@@ -51,6 +51,7 @@ type Store interface {
 	ListAgentSessionsByStatus(ctx context.Context, projectID string, statuses []models.SessionStatus, limit int) ([]*models.AgentSession, error)
 	ListAgentSessionsByWorktreePaths(ctx context.Context, paths []string) ([]*models.AgentSession, error)
 	UpdateAgentSession(ctx context.Context, session *models.AgentSession) error
+	DeleteStaleSessions(ctx context.Context, projectID, branch string) (int64, error)
 
 	// Issue Reviews
 	CreateIssueReview(ctx context.Context, review *models.IssueReview) error
