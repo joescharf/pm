@@ -81,7 +81,7 @@ export function SessionsPage() {
 
   const activeTab = STATUS_TABS.find((t) => t.value === statusTab);
   const { data, isLoading, error } = useSessions(
-    projectFilter || undefined,
+    projectFilter && projectFilter !== "__all__" ? projectFilter : undefined,
     activeTab?.statuses,
   );
   const sessions = data ?? [];
@@ -120,7 +120,7 @@ export function SessionsPage() {
   };
 
   const handleDiscover = () => {
-    discover.mutate(projectFilter || undefined, {
+    discover.mutate(projectFilter && projectFilter !== "__all__" ? projectFilter : undefined, {
       onSuccess: (data) => {
         if (data.count > 0) {
           toast.success(`Discovered ${data.count} worktree(s)`);
@@ -173,7 +173,7 @@ export function SessionsPage() {
               <SelectValue placeholder="All projects" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All projects</SelectItem>
+              <SelectItem value="__all__">All projects</SelectItem>
               {projects.map((p) => (
                 <SelectItem key={p.ID} value={p.ID}>
                   {p.Name}

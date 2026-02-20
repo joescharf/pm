@@ -604,10 +604,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run enhanced reconcile (includes discovery)
-	if s.sessions != nil {
-		_, _ = s.sessions.Reconcile(r.Context())
-	}
+	// Lightweight reconcile: check worktree status for returned sessions only
 	agent.ReconcileSessions(r.Context(), s.store, allSessions)
 	sessions := allSessions
 
@@ -767,20 +764,23 @@ func (s *Server) deleteWorktree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) discoverWorktrees(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ProjectID string `json:"project_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
-		return
+	// Accept project_id from query param or JSON body
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" && r.Body != nil && r.ContentLength > 0 {
+		var req struct {
+			ProjectID string `json:"project_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			projectID = req.ProjectID
+		}
 	}
 
-	if req.ProjectID == "" {
+	if projectID == "" {
 		writeError(w, http.StatusBadRequest, "project_id is required")
 		return
 	}
 
-	discovered, err := s.sessions.DiscoverWorktrees(r.Context(), req.ProjectID)
+	discovered, err := s.sessions.DiscoverWorktrees(r.Context(), projectID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, err.Error())
