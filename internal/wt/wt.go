@@ -2,7 +2,6 @@ package wt
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -109,41 +108,3 @@ func (c *RealClient) LifecycleForRepo(repoPath string) *lifecycle.Manager {
 	return lifecycle.NewManager(git, c.itermClient, c.stateMgr, c.trustMgr, nil)
 }
 
-// WtState represents the wt state.json file.
-type WtState struct {
-	Worktrees []WtStateEntry `json:"worktrees"`
-}
-
-// WtStateEntry is a single entry from wt state.json.
-type WtStateEntry struct {
-	Branch string `json:"branch"`
-	Path   string `json:"path"`
-	Repo   string `json:"repo"`
-}
-
-// StateReader reads wt state from its state file.
-type StateReader struct {
-	statePath string
-}
-
-// NewStateReader creates a reader for the wt state file.
-func NewStateReader() *StateReader {
-	home, _ := os.UserHomeDir()
-	return &StateReader{
-		statePath: filepath.Join(home, ".config", "wt", "state.json"),
-	}
-}
-
-// LoadState reads and parses the wt state.json.
-func (r *StateReader) LoadState() (*WtState, error) {
-	data, err := os.ReadFile(r.statePath)
-	if err != nil {
-		return nil, err
-	}
-
-	var state WtState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, err
-	}
-	return &state, nil
-}
