@@ -59,3 +59,34 @@ func CloseSession(ctx context.Context, s SessionStore, sessionID string, target 
 
 	return session, nil
 }
+
+// ReactivateSession transitions a completed or abandoned session back to idle.
+// Only works if the session is in a terminal state (completed or abandoned).
+func ReactivateSession(ctx context.Context, s SessionStore, sessionID string) (*models.AgentSession, error) {
+	session, err := s.GetAgentSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	if session.Status != models.SessionStatusCompleted && session.Status != models.SessionStatusAbandoned {
+		return nil, fmt.Errorf("session %s is already %s", sessionID, session.Status)
+	}
+
+	session.Status = models.SessionStatusIdle
+	session.EndedAt = nil
+
+	if err := s.UpdateAgentSession(ctx, session); err != nil {
+		return nil, fmt.Errorf("update session: %w", err)
+	}
+
+	// Cascade issue back to in_progress
+	if session.IssueID != "" {
+		issue, err := s.GetIssue(ctx, session.IssueID)
+		if err == nil {
+			issue.Status = models.IssueStatusInProgress
+			_ = s.UpdateIssue(ctx, issue)
+		}
+	}
+
+	return session, nil
+}

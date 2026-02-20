@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/joescharf/pm/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -154,4 +155,62 @@ func TestCloseSession_AlreadyClosed(t *testing.T) {
 	_, err := CloseSession(ctx, store, "sess-5", models.SessionStatusCompleted)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already completed")
+}
+
+func TestReactivateSession_FromCompleted(t *testing.T) {
+	store := newMockStore()
+	now := time.Now().UTC()
+	store.sessions["sess-r1"] = &models.AgentSession{
+		ID:           "sess-r1",
+		IssueID:      "issue-r1",
+		Status:       models.SessionStatusCompleted,
+		EndedAt:      &now,
+		WorktreePath: "/tmp/test-wt",
+	}
+	store.issues["issue-r1"] = &models.Issue{
+		ID:     "issue-r1",
+		Status: models.IssueStatusDone,
+	}
+
+	ctx := context.Background()
+	session, err := ReactivateSession(ctx, store, "sess-r1")
+	require.NoError(t, err)
+
+	assert.Equal(t, models.SessionStatusIdle, session.Status)
+	assert.Nil(t, session.EndedAt, "reactivated sessions should clear EndedAt")
+
+	issue := store.issues["issue-r1"]
+	assert.Equal(t, models.IssueStatusInProgress, issue.Status)
+}
+
+func TestReactivateSession_FromAbandoned(t *testing.T) {
+	store := newMockStore()
+	now := time.Now().UTC()
+	store.sessions["sess-r2"] = &models.AgentSession{
+		ID:           "sess-r2",
+		Status:       models.SessionStatusAbandoned,
+		EndedAt:      &now,
+		WorktreePath: "/tmp/test-wt",
+	}
+
+	ctx := context.Background()
+	session, err := ReactivateSession(ctx, store, "sess-r2")
+	require.NoError(t, err)
+
+	assert.Equal(t, models.SessionStatusIdle, session.Status)
+	assert.Nil(t, session.EndedAt)
+}
+
+func TestReactivateSession_AlreadyActive(t *testing.T) {
+	store := newMockStore()
+	store.sessions["sess-r3"] = &models.AgentSession{
+		ID:           "sess-r3",
+		Status:       models.SessionStatusActive,
+		WorktreePath: "/tmp/test-wt",
+	}
+
+	ctx := context.Background()
+	_, err := ReactivateSession(ctx, store, "sess-r3")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already active")
 }
