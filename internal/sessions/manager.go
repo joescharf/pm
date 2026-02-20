@@ -299,7 +299,7 @@ func (m *Manager) DeleteWorktree(ctx context.Context, sessionID string, force bo
 	}
 
 	// Close iTerm window before removing worktree
-	CloseITermWindow(session.WorktreePath)
+	_ = CloseITermWindow(session.WorktreePath)
 
 	gitClient := newRepoBoundClient(project.Path)
 

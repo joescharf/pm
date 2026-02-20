@@ -752,7 +752,7 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 
 	// Close iTerm window for terminal states (completed/abandoned)
 	if worktreePath != "" && target != models.SessionStatusIdle {
-		sessions.CloseITermWindow(worktreePath)
+		_ = sessions.CloseITermWindow(worktreePath)
 	}
 
 	result := map[string]any{
