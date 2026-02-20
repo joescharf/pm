@@ -791,13 +791,14 @@ func (s *Server) handleSyncSession(ctx context.Context, request mcp.CallToolRequ
 // pm_merge_session
 func (s *Server) mergeSessionTool() (mcp.Tool, server.ToolHandlerFunc) {
 	tool := mcp.NewTool("pm_merge_session",
-		mcp.WithDescription("Merge a session's feature branch into the base branch. Can perform local merge or create a PR."),
+		mcp.WithDescription("Merge a session's feature branch into the base branch. Can perform local merge or create a PR. After a successful local merge, automatically cleans up the worktree, branch, and iTerm window unless cleanup is disabled."),
 		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID to merge")),
 		mcp.WithString("base_branch", mcp.Description("Target branch (default: main)")),
 		mcp.WithString("rebase", mcp.Description("Set to 'true' to rebase instead of merge")),
 		mcp.WithString("create_pr", mcp.Description("Set to 'true' to create a PR instead of local merge")),
 		mcp.WithString("force", mcp.Description("Set to 'true' to skip safety checks")),
 		mcp.WithString("dry_run", mcp.Description("Set to 'true' for dry-run mode")),
+		mcp.WithString("cleanup", mcp.Description("Set to 'false' to skip post-merge cleanup of worktree, branch, and iTerm window (default: true)")),
 	)
 	return tool, s.handleMergeSession
 }
@@ -808,12 +809,16 @@ func (s *Server) handleMergeSession(ctx context.Context, request mcp.CallToolReq
 		return mcp.NewToolResultError("missing required parameter: session_id"), nil
 	}
 
+	// Default cleanup to true unless explicitly set to "false"
+	cleanup := request.GetString("cleanup", "") != "false"
+
 	opts := sessions.MergeOptions{
 		BaseBranch: request.GetString("base_branch", ""),
 		Rebase:     request.GetString("rebase", "") == "true",
 		CreatePR:   request.GetString("create_pr", "") == "true",
 		Force:      request.GetString("force", "") == "true",
 		DryRun:     request.GetString("dry_run", "") == "true",
+		Cleanup:    cleanup,
 	}
 
 	result, err := s.sessions.MergeSession(ctx, sessionID, opts)

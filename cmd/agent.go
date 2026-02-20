@@ -26,8 +26,9 @@ var (
 	closeAbandon bool
 	syncRebase   bool
 	syncForce    bool
-	mergeRebase  bool
-	mergeForce   bool
+	mergeRebase    bool
+	mergeForce     bool
+	mergeNoCleanup bool
 )
 
 var agentCmd = &cobra.Command{
@@ -150,6 +151,7 @@ func init() {
 
 	agentMergeCmd.Flags().BoolVar(&mergeRebase, "rebase", false, "Use rebase instead of merge")
 	agentMergeCmd.Flags().BoolVar(&mergeForce, "force", false, "Skip dirty worktree check")
+	agentMergeCmd.Flags().BoolVar(&mergeNoCleanup, "no-cleanup", false, "Skip post-merge cleanup (worktree removal, branch deletion, iTerm close)")
 
 	agentCmd.AddCommand(agentLaunchCmd)
 	agentCmd.AddCommand(agentListCmd)
@@ -554,9 +556,10 @@ func agentMergeRun(sessionRef string) error {
 
 	mgr := sessions.NewManager(s)
 	opts := sessions.MergeOptions{
-		Rebase: mergeRebase,
-		Force:  mergeForce,
-		DryRun: dryRun,
+		Rebase:  mergeRebase,
+		Force:   mergeForce,
+		DryRun:  dryRun,
+		Cleanup: !mergeNoCleanup,
 	}
 
 	result, err := mgr.MergeSession(ctx, sessionID, opts)
@@ -573,6 +576,9 @@ func agentMergeRun(sessionRef string) error {
 				strategy = "Rebased"
 			}
 			ui.Success("%s '%s' into base branch", strategy, result.Branch)
+			if result.Cleaned {
+				ui.Success("Cleaned up worktree and branch")
+			}
 		}
 	} else if len(result.Conflicts) > 0 {
 		ui.Error("Merge conflicts detected:")

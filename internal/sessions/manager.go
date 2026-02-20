@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/joescharf/pm/internal/models"
@@ -51,6 +53,7 @@ type MergeOptions struct {
 	PRDraft    bool
 	Force      bool
 	DryRun     bool
+	Cleanup    bool
 }
 
 // MergeResult holds the result of merging a session's worktree.
@@ -62,6 +65,7 @@ type MergeResult struct {
 	PRURL     string
 	Conflicts []string
 	Error     string
+	Cleaned   bool
 }
 
 // SyncSession syncs a session's worktree with the base branch.
@@ -256,6 +260,27 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 		return result, err
 	}
 
+	// Post-merge cleanup: remove worktree, delete branch, close iTerm window
+	if result.Success && !opts.CreatePR && opts.Cleanup && !opts.DryRun && session.WorktreePath != "" {
+		wtDir := filepath.Base(session.WorktreePath)
+
+		// 1. Close iTerm window (best-effort)
+		_ = closeITermWindowByName(wtDir)
+
+		// 2. Remove worktree and delete branch
+		deleteOpts := ops.DeleteOptions{
+			Force:        true,
+			DeleteBranch: true,
+			DryRun:       false,
+		}
+		logger := &nopLogger{}
+		if delErr := ops.Delete(ctx, gitClient, nil, logger, session.WorktreePath, deleteOpts, nil, nil); delErr == nil {
+			session.WorktreePath = ""
+			_ = m.store.UpdateAgentSession(ctx, session)
+			result.Cleaned = true
+		}
+	}
+
 	return result, nil
 }
 
@@ -443,6 +468,27 @@ func (m *Manager) Reconcile(ctx context.Context) (int, error) {
 	}
 
 	return totalUpdated, nil
+}
+
+// closeITermWindowByName closes any iTerm2 window whose session name contains
+// the given name. This matches wt's naming convention (worktree dirname).
+// Best-effort: errors are returned but callers typically ignore them.
+func closeITermWindowByName(name string) error {
+	script := fmt.Sprintf(`tell application "iTerm2"
+	repeat with w in windows
+		repeat with t in tabs of w
+			repeat with s in sessions of t
+				if name of s contains "%s" then
+					close w
+					return true
+				end if
+			end repeat
+		end repeat
+	end repeat
+	return false
+end tell`, name)
+	_, err := exec.Command("osascript", "-e", script).Output()
+	return err
 }
 
 // nopLogger discards all log output.

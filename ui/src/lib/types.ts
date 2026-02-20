@@ -99,6 +99,7 @@ export interface MergeSessionRequest {
   pr_draft?: boolean;
   force?: boolean;
   dry_run?: boolean;
+  cleanup?: boolean;
 }
 
 export interface MergeSessionResponse {
@@ -109,6 +110,7 @@ export interface MergeSessionResponse {
   PRURL: string;
   Conflicts: string[] | null;
   Error: string;
+  Cleaned: boolean;
 }
 
 export interface DiscoverWorktreesResponse {

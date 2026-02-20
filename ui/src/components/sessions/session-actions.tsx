@@ -104,6 +104,7 @@ export function MergeButton({ session }: { session: Session }) {
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<"pr" | "merge" | "rebase">("pr");
   const [force, setForce] = useState(false);
+  const [cleanup, setCleanup] = useState(true);
   const merge = useMergeSession();
 
   const methodLabels = { pr: "Pull Request", merge: "Merge", rebase: "Rebase" };
@@ -116,6 +117,7 @@ export function MergeButton({ session }: { session: Session }) {
         rebase: method === "rebase",
         create_pr: method === "pr",
         force,
+        cleanup: method !== "pr" ? cleanup : undefined,
       },
       {
         onSuccess: (data) => {
@@ -131,7 +133,8 @@ export function MergeButton({ session }: { session: Session }) {
               },
             });
           } else if (data.Success) {
-            toast.success(`${methodLabels[method]} completed successfully`);
+            const cleanedMsg = data.Cleaned ? " — worktree and branch cleaned up" : "";
+            toast.success(`${methodLabels[method]} completed successfully${cleanedMsg}`);
           }
         },
         onError: (err) => toast.error(`${methodLabels[method]} failed: ${(err as Error).message}`),
@@ -178,6 +181,17 @@ export function MergeButton({ session }: { session: Session }) {
               />
               Force (skip dirty worktree check)
             </label>
+            {method !== "pr" && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={cleanup}
+                  onChange={(e) => setCleanup(e.target.checked)}
+                  className="rounded border-input"
+                />
+                Clean up worktree and branch after merge
+              </label>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>

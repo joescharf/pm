@@ -726,12 +726,19 @@ func (s *Server) mergeSession(w http.ResponseWriter, r *http.Request) {
 		PRDraft    bool   `json:"pr_draft"`
 		Force      bool   `json:"force"`
 		DryRun     bool   `json:"dry_run"`
+		Cleanup    *bool  `json:"cleanup,omitempty"`
 	}
 	if r.Body != nil && r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
+	}
+
+	// Default cleanup to true when not specified
+	cleanup := true
+	if req.Cleanup != nil {
+		cleanup = *req.Cleanup
 	}
 
 	result, err := s.sessions.MergeSession(r.Context(), id, sessions.MergeOptions{
@@ -743,6 +750,7 @@ func (s *Server) mergeSession(w http.ResponseWriter, r *http.Request) {
 		PRDraft:    req.PRDraft,
 		Force:      req.Force,
 		DryRun:     req.DryRun,
+		Cleanup:    cleanup,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
