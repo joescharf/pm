@@ -262,10 +262,8 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 
 	// Post-merge cleanup: remove worktree, delete branch, close iTerm window
 	if result.Success && !opts.CreatePR && opts.Cleanup && !opts.DryRun && session.WorktreePath != "" {
-		wtDir := filepath.Base(session.WorktreePath)
-
 		// 1. Close iTerm window (best-effort)
-		_ = CloseITermWindowByName(wtDir)
+		_ = CloseITermWindow(session.WorktreePath)
 
 		// 2. Remove worktree and delete branch
 		deleteOpts := ops.DeleteOptions{
@@ -301,8 +299,7 @@ func (m *Manager) DeleteWorktree(ctx context.Context, sessionID string, force bo
 	}
 
 	// Close iTerm window before removing worktree
-	wtDir := filepath.Base(session.WorktreePath)
-	CloseITermWindowByName(wtDir)
+	CloseITermWindow(session.WorktreePath)
 
 	gitClient := newRepoBoundClient(project.Path)
 
@@ -474,10 +471,68 @@ func (m *Manager) Reconcile(ctx context.Context) (int, error) {
 	return totalUpdated, nil
 }
 
-// CloseITermWindowByName closes any iTerm2 window whose session name contains
-// the given name. This matches wt's naming convention (worktree dirname).
+// CloseITermWindow closes the iTerm2 window for a worktree path.
+// It reads wt's state file to find the unique session ID, then closes by ID.
+// Falls back to name-based matching if state lookup fails.
 // Best-effort: errors are returned but callers typically ignore them.
-func CloseITermWindowByName(name string) error {
+func CloseITermWindow(worktreePath string) error {
+	// Try to get unique session ID from wt state file
+	if sessionID := getWtSessionID(worktreePath); sessionID != "" {
+		return closeITermWindowByID(sessionID)
+	}
+	// Fallback: name-based match using worktree dirname
+	return closeITermWindowByName(filepath.Base(worktreePath))
+}
+
+// getWtSessionID reads the wt state file and returns the claude_session_id for a worktree path.
+func getWtSessionID(worktreePath string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	stateFile := filepath.Join(home, ".config", "wt", "state.json")
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		return ""
+	}
+
+	var state struct {
+		Worktrees map[string]struct {
+			ClaudeSessionID string `json:"claude_session_id"`
+		} `json:"worktrees"`
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return ""
+	}
+
+	if wt, ok := state.Worktrees[worktreePath]; ok {
+		return wt.ClaudeSessionID
+	}
+	return ""
+}
+
+// closeITermWindowByID closes an iTerm2 window by unique session ID.
+func closeITermWindowByID(sessionID string) error {
+	script := fmt.Sprintf(`tell application "iTerm2"
+	repeat with w in windows
+		repeat with t in tabs of w
+			repeat with s in sessions of t
+				if unique ID of s is "%s" then
+					close w
+					return true
+				end if
+			end repeat
+		end repeat
+	end repeat
+	return false
+end tell`, sessionID)
+	_, err := exec.Command("osascript", "-e", script).Output()
+	return err
+}
+
+// closeITermWindowByName closes any iTerm2 window whose session name contains
+// the given name. Fallback for when wt state is unavailable.
+func closeITermWindowByName(name string) error {
 	script := fmt.Sprintf(`tell application "iTerm2"
 	repeat with w in windows
 		repeat with t in tabs of w

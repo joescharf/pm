@@ -445,8 +445,7 @@ func agentCloseRun(sessionRef string) error {
 
 	// Close iTerm window for terminal states (completed/abandoned)
 	if worktreePath != "" && target != models.SessionStatusIdle {
-		wtDir := filepath.Base(worktreePath)
-		sessions.CloseITermWindowByName(wtDir)
+		sessions.CloseITermWindow(worktreePath)
 	}
 
 	ui.Success("Session %s → %s", output.Cyan(shortID(session.ID)), output.Cyan(string(session.Status)))
