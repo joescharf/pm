@@ -29,7 +29,7 @@ build: bin/$(BINARY_NAME) ## Build the Go binary
 bin/$(BINARY_NAME): $(GO_SOURCES) $(if $(wildcard ui/package.json),$(UI_EMBED_STAMP))
 	go build $(LDFLAGS) -o bin/$(BINARY_NAME) .
 
-install: ## Install the binary to $GOPATH/bin
+install: $(if $(wildcard ui/package.json),$(UI_EMBED_STAMP)) ## Install the binary to $GOPATH/bin
 	go install $(LDFLAGS) .
 
 run: build ## Build and run the binary
