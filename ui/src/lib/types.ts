@@ -92,6 +92,7 @@ export interface SyncSessionResponse {
 
 export interface MergeSessionRequest {
   base_branch?: string;
+  rebase?: boolean;
   create_pr?: boolean;
   pr_title?: string;
   pr_body?: string;

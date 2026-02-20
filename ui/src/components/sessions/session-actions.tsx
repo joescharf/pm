@@ -102,12 +102,21 @@ export function SyncButton({ session }: { session: Session }) {
 // --- Merge Dialog ---
 export function MergeButton({ session }: { session: Session }) {
   const [open, setOpen] = useState(false);
-  const [createPr, setCreatePr] = useState<"pr" | "local">("pr");
+  const [method, setMethod] = useState<"pr" | "merge" | "rebase">("pr");
+  const [force, setForce] = useState(false);
   const merge = useMergeSession();
+
+  const methodLabels = { pr: "Pull Request", merge: "Merge", rebase: "Rebase" };
+  const buttonLabels = { pr: "Create PR", merge: "Merge", rebase: "Rebase & Merge" };
 
   const handleMerge = () => {
     merge.mutate(
-      { sessionId: session.ID, create_pr: createPr === "pr" },
+      {
+        sessionId: session.ID,
+        rebase: method === "rebase",
+        create_pr: method === "pr",
+        force,
+      },
       {
         onSuccess: (data) => {
           setOpen(false);
@@ -122,10 +131,10 @@ export function MergeButton({ session }: { session: Session }) {
               },
             });
           } else if (data.Success) {
-            toast.success("Merged successfully");
+            toast.success(`${methodLabels[method]} completed successfully`);
           }
         },
-        onError: (err) => toast.error(`Merge failed: ${(err as Error).message}`),
+        onError: (err) => toast.error(`${methodLabels[method]} failed: ${(err as Error).message}`),
       },
     );
   };
@@ -142,30 +151,40 @@ export function MergeButton({ session }: { session: Session }) {
           <DialogHeader>
             <DialogTitle>Merge into base branch</DialogTitle>
             <DialogDescription>
-              Merge <code className="text-xs font-mono">{session.Branch}</code> into the base
+              Integrate <code className="text-xs font-mono">{session.Branch}</code> into the base
               branch.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>Method</Label>
-              <Select value={createPr} onValueChange={(v) => setCreatePr(v as "pr" | "local")}>
+              <Select value={method} onValueChange={(v) => setMethod(v as "pr" | "merge" | "rebase")}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pr">Create Pull Request</SelectItem>
-                  <SelectItem value="local">Local merge</SelectItem>
+                  <SelectItem value="pr">Pull Request</SelectItem>
+                  <SelectItem value="merge">Merge</SelectItem>
+                  <SelectItem value="rebase">Rebase</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={force}
+                onChange={(e) => setForce(e.target.checked)}
+                className="rounded border-input"
+              />
+              Force (skip dirty worktree check)
+            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleMerge} disabled={merge.isPending}>
-              {merge.isPending ? "Merging..." : "Merge"}
+              {merge.isPending ? "Working..." : buttonLabels[method]}
             </Button>
           </DialogFooter>
         </DialogContent>

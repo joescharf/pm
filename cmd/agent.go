@@ -26,6 +26,8 @@ var (
 	closeAbandon bool
 	syncRebase   bool
 	syncForce    bool
+	mergeRebase  bool
+	mergeForce   bool
 )
 
 var agentCmd = &cobra.Command{
@@ -109,7 +111,7 @@ var agentSyncCmd = &cobra.Command{
 var agentMergeCmd = &cobra.Command{
 	Use:   "merge [session_id]",
 	Short: "Merge a session's branch into the base branch",
-	Long:  "Merges the feature branch into the base branch (default: main).\nAuto-detects session from cwd if no session_id is given.",
+	Long:  "Merges or rebases the feature branch into the base branch (default: main).\nAuto-detects session from cwd if no session_id is given.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var sessionRef string
@@ -145,6 +147,9 @@ func init() {
 
 	agentSyncCmd.Flags().BoolVar(&syncRebase, "rebase", false, "Use rebase instead of merge")
 	agentSyncCmd.Flags().BoolVar(&syncForce, "force", false, "Skip dirty worktree check")
+
+	agentMergeCmd.Flags().BoolVar(&mergeRebase, "rebase", false, "Use rebase instead of merge")
+	agentMergeCmd.Flags().BoolVar(&mergeForce, "force", false, "Skip dirty worktree check")
 
 	agentCmd.AddCommand(agentLaunchCmd)
 	agentCmd.AddCommand(agentListCmd)
@@ -549,6 +554,8 @@ func agentMergeRun(sessionRef string) error {
 
 	mgr := sessions.NewManager(s)
 	opts := sessions.MergeOptions{
+		Rebase: mergeRebase,
+		Force:  mergeForce,
 		DryRun: dryRun,
 	}
 
@@ -561,7 +568,11 @@ func agentMergeRun(sessionRef string) error {
 		if result.PRCreated {
 			ui.Success("PR created: %s", result.PRURL)
 		} else {
-			ui.Success("Merged '%s' into base branch", result.Branch)
+			strategy := "Merged"
+			if mergeRebase {
+				strategy = "Rebased"
+			}
+			ui.Success("%s '%s' into base branch", strategy, result.Branch)
 		}
 	} else if len(result.Conflicts) > 0 {
 		ui.Error("Merge conflicts detected:")

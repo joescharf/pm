@@ -719,6 +719,7 @@ func (s *Server) mergeSession(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		BaseBranch string `json:"base_branch"`
+		Rebase     bool   `json:"rebase"`
 		CreatePR   bool   `json:"create_pr"`
 		PRTitle    string `json:"pr_title"`
 		PRBody     string `json:"pr_body"`
@@ -735,6 +736,7 @@ func (s *Server) mergeSession(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.sessions.MergeSession(r.Context(), id, sessions.MergeOptions{
 		BaseBranch: req.BaseBranch,
+		Rebase:     req.Rebase,
 		CreatePR:   req.CreatePR,
 		PRTitle:    req.PRTitle,
 		PRBody:     req.PRBody,

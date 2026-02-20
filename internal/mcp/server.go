@@ -794,6 +794,7 @@ func (s *Server) mergeSessionTool() (mcp.Tool, server.ToolHandlerFunc) {
 		mcp.WithDescription("Merge a session's feature branch into the base branch. Can perform local merge or create a PR."),
 		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID to merge")),
 		mcp.WithString("base_branch", mcp.Description("Target branch (default: main)")),
+		mcp.WithString("rebase", mcp.Description("Set to 'true' to rebase instead of merge")),
 		mcp.WithString("create_pr", mcp.Description("Set to 'true' to create a PR instead of local merge")),
 		mcp.WithString("force", mcp.Description("Set to 'true' to skip safety checks")),
 		mcp.WithString("dry_run", mcp.Description("Set to 'true' for dry-run mode")),
@@ -809,6 +810,7 @@ func (s *Server) handleMergeSession(ctx context.Context, request mcp.CallToolReq
 
 	opts := sessions.MergeOptions{
 		BaseBranch: request.GetString("base_branch", ""),
+		Rebase:     request.GetString("rebase", "") == "true",
 		CreatePR:   request.GetString("create_pr", "") == "true",
 		Force:      request.GetString("force", "") == "true",
 		DryRun:     request.GetString("dry_run", "") == "true",

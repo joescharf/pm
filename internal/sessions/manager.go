@@ -44,6 +44,7 @@ type SyncResult struct {
 // MergeOptions configures a session merge operation.
 type MergeOptions struct {
 	BaseBranch string
+	Rebase     bool
 	CreatePR   bool
 	PRTitle    string
 	PRBody     string
@@ -177,9 +178,14 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 		baseBranch = "main"
 	}
 
+	strategy := "merge"
+	if opts.Rebase {
+		strategy = "rebase"
+	}
+
 	mergeOpts := ops.MergeOptions{
 		BaseBranch: baseBranch,
-		Strategy:   "merge",
+		Strategy:   strategy,
 		Force:      opts.Force,
 		DryRun:     opts.DryRun,
 		CreatePR:   opts.CreatePR,
@@ -220,24 +226,28 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 			conflictJSON, _ := json.Marshal(files)
 			session.ConflictFiles = string(conflictJSON)
 			session.LastError = mergeResult.Error.Error()
-		} else if mergeResult != nil && mergeResult.Success {
+		} else {
+			// Always clear conflict state when there are no new conflicts
 			session.ConflictState = models.ConflictStateNone
 			session.ConflictFiles = "[]"
-			session.LastError = ""
-			// Mark session as completed on successful merge
-			now := time.Now().UTC()
-			session.Status = models.SessionStatusCompleted
-			session.EndedAt = &now
-			// Cascade issue status
-			if session.IssueID != "" {
-				issue, issErr := m.store.GetIssue(ctx, session.IssueID)
-				if issErr == nil && issue.Status == models.IssueStatusInProgress {
-					issue.Status = models.IssueStatusDone
-					_ = m.store.UpdateIssue(ctx, issue)
+
+			if mergeResult != nil && mergeResult.Success {
+				session.LastError = ""
+				// Mark session as completed on successful merge
+				now := time.Now().UTC()
+				session.Status = models.SessionStatusCompleted
+				session.EndedAt = &now
+				// Cascade issue status
+				if session.IssueID != "" {
+					issue, issErr := m.store.GetIssue(ctx, session.IssueID)
+					if issErr == nil && issue.Status == models.IssueStatusInProgress {
+						issue.Status = models.IssueStatusDone
+						_ = m.store.UpdateIssue(ctx, issue)
+					}
 				}
+			} else if err != nil {
+				session.LastError = err.Error()
 			}
-		} else if err != nil {
-			session.LastError = err.Error()
 		}
 		_ = m.store.UpdateAgentSession(ctx, session)
 	}
