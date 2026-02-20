@@ -30,7 +30,7 @@ func TestReconcileSessions_OrphanedWorktree(t *testing.T) {
 	assert.Equal(t, models.IssueStatusOpen, ms.issues["issue-1"].Status)
 }
 
-func TestReconcileSessions_ExistingWorktree_ActiveToIdle(t *testing.T) {
+func TestReconcileSessions_ExistingWorktree_ActiveStaysActive(t *testing.T) {
 	session := &models.AgentSession{
 		ID:           "sess-1",
 		WorktreePath: t.TempDir(),
@@ -42,9 +42,8 @@ func TestReconcileSessions_ExistingWorktree_ActiveToIdle(t *testing.T) {
 	}
 
 	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
-	assert.Equal(t, 1, cleaned)
-	assert.Equal(t, models.SessionStatusIdle, ms.sessions["sess-1"].Status)
-	assert.NotNil(t, ms.sessions["sess-1"].LastActiveAt)
+	assert.Equal(t, 0, cleaned)
+	assert.Equal(t, models.SessionStatusActive, ms.sessions["sess-1"].Status)
 }
 
 func TestReconcileSessions_ExistingWorktree_IdleStaysIdle(t *testing.T) {

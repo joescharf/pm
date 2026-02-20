@@ -408,11 +408,6 @@ func (m *Manager) Reconcile(ctx context.Context) (int, error) {
 				sess.Status = models.SessionStatusAbandoned
 				sess.EndedAt = &now
 				updated = true
-			case wtExists && sess.Status == models.SessionStatusActive:
-				now := time.Now().UTC()
-				sess.LastActiveAt = &now
-				sess.Status = models.SessionStatusIdle
-				updated = true
 			case wtExists && sess.Status == models.SessionStatusAbandoned:
 				now := time.Now().UTC()
 				sess.LastActiveAt = &now

@@ -650,11 +650,10 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		ProjectName:  projectName,
 	}
 
-	// Check if worktree path exists
+	// Check if worktree path exists and enrich with live git data
 	if _, err := os.Stat(sess.WorktreePath); err == nil {
 		resp.WorktreeExists = true
 
-		// Enrich with git info from the worktree
 		if dirty, err := s.git.IsDirty(sess.WorktreePath); err == nil {
 			resp.IsDirty = dirty
 		}
@@ -664,6 +663,16 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		if ahead, behind, err := s.git.AheadBehind(sess.WorktreePath, "main"); err == nil {
 			resp.AheadCount = ahead
 			resp.BehindCount = behind
+			// Use ahead count as commit count when stored value is stale
+			if ahead > sess.CommitCount {
+				sess.CommitCount = ahead
+			}
+		}
+		if hash, err := s.git.LastCommitHash(sess.WorktreePath); err == nil {
+			sess.LastCommitHash = hash
+		}
+		if msg, err := s.git.LastCommitMessage(sess.WorktreePath); err == nil {
+			sess.LastCommitMessage = msg
 		}
 	}
 
