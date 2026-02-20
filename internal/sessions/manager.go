@@ -380,7 +380,9 @@ func (m *Manager) DiscoverWorktrees(ctx context.Context, projectID string) ([]*m
 
 	knownPaths := make(map[string]bool)
 	for _, s := range existingSessions {
-		knownPaths[s.WorktreePath] = true
+		if s.Status == models.SessionStatusActive || s.Status == models.SessionStatusIdle {
+			knownPaths[s.WorktreePath] = true
+		}
 	}
 
 	// Create sessions for untracked worktrees
