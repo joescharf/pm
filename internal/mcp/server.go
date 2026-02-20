@@ -17,30 +17,33 @@ import (
 	"github.com/joescharf/pm/internal/health"
 	"github.com/joescharf/pm/internal/llm"
 	"github.com/joescharf/pm/internal/models"
+	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
 )
 
 // Server wraps the pm data layer and exposes it as MCP tools.
 type Server struct {
-	store  store.Store
-	git    git.Client
-	gh     git.GitHubClient
-	wt     wt.Client
-	llm    *llm.Client
-	scorer *health.Scorer
+	store    store.Store
+	git      git.Client
+	gh       git.GitHubClient
+	wt       wt.Client
+	llm      *llm.Client
+	scorer   *health.Scorer
+	sessions *sessions.Manager
 }
 
 // NewServer creates the MCP server wrapper with all required dependencies.
 // The llmClient may be nil if no API key is configured.
 func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client, llmClient *llm.Client) *Server {
 	return &Server{
-		store:  s,
-		git:    gc,
-		gh:     ghc,
-		wt:     wtc,
-		llm:    llmClient,
-		scorer: health.NewScorer(),
+		store:    s,
+		git:      gc,
+		gh:       ghc,
+		wt:       wtc,
+		llm:      llmClient,
+		scorer:   health.NewScorer(),
+		sessions: sessions.NewManager(s),
 	}
 }
 
@@ -57,6 +60,10 @@ func (s *Server) MCPServer() *server.MCPServer {
 	srv.AddTool(s.healthScoreTool())
 	srv.AddTool(s.launchAgentTool())
 	srv.AddTool(s.closeAgentTool())
+	srv.AddTool(s.syncSessionTool())
+	srv.AddTool(s.mergeSessionTool())
+	srv.AddTool(s.deleteWorktreeTool())
+	srv.AddTool(s.discoverWorktreesTool())
 	srv.AddTool(s.prepareReviewTool())
 	srv.AddTool(s.saveReviewTool())
 	srv.AddTool(s.updateProjectTool())
@@ -744,6 +751,149 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 		result["ended_at"] = session.EndedAt.Format(time.RFC3339)
 	}
 
+	data, _ := json.Marshal(result)
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_sync_session
+func (s *Server) syncSessionTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_sync_session",
+		mcp.WithDescription("Sync a session's worktree with the base branch. Fetches latest changes and merges/rebases the base branch into the feature branch."),
+		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID to sync")),
+		mcp.WithString("rebase", mcp.Description("Set to 'true' to rebase instead of merge (default: false)")),
+		mcp.WithString("force", mcp.Description("Set to 'true' to skip dirty worktree check (default: false)")),
+		mcp.WithString("dry_run", mcp.Description("Set to 'true' for dry-run mode (default: false)")),
+	)
+	return tool, s.handleSyncSession
+}
+
+func (s *Server) handleSyncSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: session_id"), nil
+	}
+
+	opts := sessions.SyncOptions{
+		Rebase: request.GetString("rebase", "") == "true",
+		Force:  request.GetString("force", "") == "true",
+		DryRun: request.GetString("dry_run", "") == "true",
+	}
+
+	result, err := s.sessions.SyncSession(ctx, sessionID, opts)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("sync failed: %v", err)), nil
+	}
+
+	data, _ := json.Marshal(result)
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_merge_session
+func (s *Server) mergeSessionTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_merge_session",
+		mcp.WithDescription("Merge a session's feature branch into the base branch. Can perform local merge or create a PR."),
+		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID to merge")),
+		mcp.WithString("base_branch", mcp.Description("Target branch (default: main)")),
+		mcp.WithString("create_pr", mcp.Description("Set to 'true' to create a PR instead of local merge")),
+		mcp.WithString("force", mcp.Description("Set to 'true' to skip safety checks")),
+		mcp.WithString("dry_run", mcp.Description("Set to 'true' for dry-run mode")),
+	)
+	return tool, s.handleMergeSession
+}
+
+func (s *Server) handleMergeSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: session_id"), nil
+	}
+
+	opts := sessions.MergeOptions{
+		BaseBranch: request.GetString("base_branch", ""),
+		CreatePR:   request.GetString("create_pr", "") == "true",
+		Force:      request.GetString("force", "") == "true",
+		DryRun:     request.GetString("dry_run", "") == "true",
+	}
+
+	result, err := s.sessions.MergeSession(ctx, sessionID, opts)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("merge failed: %v", err)), nil
+	}
+
+	data, _ := json.Marshal(result)
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_delete_worktree
+func (s *Server) deleteWorktreeTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_delete_worktree",
+		mcp.WithDescription("Delete a session's worktree. Marks the session as abandoned."),
+		mcp.WithString("session_id", mcp.Required(), mcp.Description("Session ID whose worktree to delete")),
+		mcp.WithString("force", mcp.Description("Set to 'true' to force removal even with uncommitted changes")),
+	)
+	return tool, s.handleDeleteWorktree
+}
+
+func (s *Server) handleDeleteWorktree(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sessionID, err := request.RequireString("session_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: session_id"), nil
+	}
+
+	force := request.GetString("force", "") == "true"
+
+	if err := s.sessions.DeleteWorktree(ctx, sessionID, force); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("delete worktree failed: %v", err)), nil
+	}
+
+	result := map[string]any{
+		"session_id": sessionID,
+		"status":     "abandoned",
+		"message":    "worktree deleted successfully",
+	}
+	data, _ := json.Marshal(result)
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_discover_worktrees
+func (s *Server) discoverWorktreesTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_discover_worktrees",
+		mcp.WithDescription("Scan a project's git repo for worktrees not tracked by pm. Creates idle session records for discovered worktrees."),
+		mcp.WithString("project", mcp.Required(), mcp.Description("Project name")),
+	)
+	return tool, s.handleDiscoverWorktrees
+}
+
+func (s *Server) handleDiscoverWorktrees(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectName, err := request.RequireString("project")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: project"), nil
+	}
+
+	p, err := s.resolveProject(ctx, projectName)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("project not found: %s", projectName)), nil
+	}
+
+	discovered, err := s.sessions.DiscoverWorktrees(ctx, p.ID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("discovery failed: %v", err)), nil
+	}
+
+	var out []map[string]any
+	for _, sess := range discovered {
+		out = append(out, map[string]any{
+			"session_id":    sess.ID,
+			"branch":        sess.Branch,
+			"worktree_path": sess.WorktreePath,
+			"status":        string(sess.Status),
+		})
+	}
+
+	result := map[string]any{
+		"project":    projectName,
+		"discovered": out,
+		"count":      len(discovered),
+	}
 	data, _ := json.Marshal(result)
 	return mcp.NewToolResultText(string(data)), nil
 }

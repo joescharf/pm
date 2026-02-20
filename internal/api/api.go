@@ -15,30 +15,33 @@ import (
 	"github.com/joescharf/pm/internal/llm"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/refresh"
+	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
 )
 
 // Server provides the REST API handlers.
 type Server struct {
-	store  store.Store
-	git    git.Client
-	gh     git.GitHubClient
-	wt     wt.Client
-	llm    *llm.Client
-	scorer *health.Scorer
+	store    store.Store
+	git      git.Client
+	gh       git.GitHubClient
+	wt       wt.Client
+	llm      *llm.Client
+	scorer   *health.Scorer
+	sessions *sessions.Manager
 }
 
 // NewServer creates a new API server.
 // The llmClient may be nil if no API key is configured.
 func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client, llmClient *llm.Client) *Server {
 	return &Server{
-		store:  s,
-		git:    gc,
-		gh:     ghc,
-		wt:     wtc,
-		llm:    llmClient,
-		scorer: health.NewScorer(),
+		store:    s,
+		git:      gc,
+		gh:       ghc,
+		wt:       wtc,
+		llm:      llmClient,
+		scorer:   health.NewScorer(),
+		sessions: sessions.NewManager(s),
 	}
 }
 
@@ -73,6 +76,10 @@ func (s *Server) Router() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/sessions", s.listSessions)
 	mux.HandleFunc("GET /api/v1/sessions/{id}", s.getSession)
+	mux.HandleFunc("POST /api/v1/sessions/{id}/sync", s.syncSession)
+	mux.HandleFunc("POST /api/v1/sessions/{id}/merge", s.mergeSession)
+	mux.HandleFunc("DELETE /api/v1/sessions/{id}/worktree", s.deleteWorktree)
+	mux.HandleFunc("POST /api/v1/sessions/discover", s.discoverWorktrees)
 
 	mux.HandleFunc("GET /api/v1/tags", s.listTags)
 
@@ -574,12 +581,35 @@ type sessionDetailResponse struct {
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
-	sessions, err := s.store.ListAgentSessions(r.Context(), projectID, 50)
+	statusFilter := r.URL.Query().Get("status")
+
+	var allSessions []*models.AgentSession
+	var err error
+
+	if statusFilter != "" {
+		// Parse comma-separated statuses
+		var statuses []models.SessionStatus
+		for _, st := range strings.Split(statusFilter, ",") {
+			st = strings.TrimSpace(st)
+			if st != "" {
+				statuses = append(statuses, models.SessionStatus(st))
+			}
+		}
+		allSessions, err = s.store.ListAgentSessionsByStatus(r.Context(), projectID, statuses, 50)
+	} else {
+		allSessions, err = s.store.ListAgentSessions(r.Context(), projectID, 50)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	agent.ReconcileSessions(r.Context(), s.store, sessions)
+
+	// Run enhanced reconcile (includes discovery)
+	if s.sessions != nil {
+		_, _ = s.sessions.Reconcile(r.Context())
+	}
+	agent.ReconcileSessions(r.Context(), s.store, allSessions)
+	sessions := allSessions
 
 	// Build enriched responses with project names (cached by project ID)
 	nameCache := make(map[string]string)
@@ -641,6 +671,132 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// --- Session Operations ---
+
+func (s *Server) syncSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req struct {
+		Rebase bool `json:"rebase"`
+		Force  bool `json:"force"`
+		DryRun bool `json:"dry_run"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+	}
+
+	result, err := s.sessions.SyncSession(r.Context(), id, sessions.SyncOptions{
+		Rebase: req.Rebase,
+		Force:  req.Force,
+		DryRun: req.DryRun,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) mergeSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req struct {
+		BaseBranch string `json:"base_branch"`
+		CreatePR   bool   `json:"create_pr"`
+		PRTitle    string `json:"pr_title"`
+		PRBody     string `json:"pr_body"`
+		PRDraft    bool   `json:"pr_draft"`
+		Force      bool   `json:"force"`
+		DryRun     bool   `json:"dry_run"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+	}
+
+	result, err := s.sessions.MergeSession(r.Context(), id, sessions.MergeOptions{
+		BaseBranch: req.BaseBranch,
+		CreatePR:   req.CreatePR,
+		PRTitle:    req.PRTitle,
+		PRBody:     req.PRBody,
+		PRDraft:    req.PRDraft,
+		Force:      req.Force,
+		DryRun:     req.DryRun,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) deleteWorktree(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req struct {
+		Force bool `json:"force"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if err := s.sessions.DeleteWorktree(r.Context(), id, req.Force); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) discoverWorktrees(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.ProjectID == "" {
+		writeError(w, http.StatusBadRequest, "project_id is required")
+		return
+	}
+
+	discovered, err := s.sessions.DiscoverWorktrees(r.Context(), req.ProjectID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if discovered == nil {
+		discovered = []*models.AgentSession{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"discovered": discovered,
+		"count":      len(discovered),
+	})
 }
 
 // --- Tags ---

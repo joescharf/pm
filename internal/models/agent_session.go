@@ -12,6 +12,15 @@ const (
 	SessionStatusAbandoned SessionStatus = "abandoned"
 )
 
+// ConflictState represents the conflict state of a session's worktree.
+type ConflictState string
+
+const (
+	ConflictStateNone         ConflictState = "none"
+	ConflictStateSyncConflict ConflictState = "sync_conflict"
+	ConflictStateMergeConflict ConflictState = "merge_conflict"
+)
+
 // AgentSession represents a Claude Code agent session tied to a project and issue.
 type AgentSession struct {
 	ID                string
@@ -27,4 +36,11 @@ type AgentSession struct {
 	LastActiveAt      *time.Time
 	StartedAt         time.Time
 	EndedAt           *time.Time
+
+	// Session operations fields
+	LastError     string        // Last operation error message
+	LastSyncAt    *time.Time    // When last synced with base
+	ConflictState ConflictState // "none", "sync_conflict", "merge_conflict"
+	ConflictFiles string        // JSON array of conflicting file paths
+	Discovered    bool          // true if auto-discovered (not created by pm)
 }

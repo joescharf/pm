@@ -13,6 +13,7 @@ import (
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
 )
@@ -23,6 +24,8 @@ var (
 	agentLimit   int
 	closeDone    bool
 	closeAbandon bool
+	syncRebase   bool
+	syncForce    bool
 )
 
 var agentCmd = &cobra.Command{
@@ -89,6 +92,48 @@ When no session_id is given:
 	},
 }
 
+var agentSyncCmd = &cobra.Command{
+	Use:   "sync [session_id]",
+	Short: "Sync a session's worktree with the base branch",
+	Long:  "Fetches latest changes and merges/rebases the base branch into the feature branch.\nAuto-detects session from cwd if no session_id is given.",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var sessionRef string
+		if len(args) > 0 {
+			sessionRef = args[0]
+		}
+		return agentSyncRun(sessionRef)
+	},
+}
+
+var agentMergeCmd = &cobra.Command{
+	Use:   "merge [session_id]",
+	Short: "Merge a session's branch into the base branch",
+	Long:  "Merges the feature branch into the base branch (default: main).\nAuto-detects session from cwd if no session_id is given.",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var sessionRef string
+		if len(args) > 0 {
+			sessionRef = args[0]
+		}
+		return agentMergeRun(sessionRef)
+	},
+}
+
+var agentDiscoverCmd = &cobra.Command{
+	Use:   "discover [project]",
+	Short: "Discover worktrees not tracked by pm",
+	Long:  "Scans a project's git repo for worktrees and creates idle session records for untracked ones.",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var projectRef string
+		if len(args) > 0 {
+			projectRef = args[0]
+		}
+		return agentDiscoverRun(projectRef)
+	},
+}
+
 func init() {
 	agentLaunchCmd.Flags().StringVar(&agentIssue, "issue", "", "Issue ID to work on")
 	agentLaunchCmd.Flags().StringVar(&agentBranch, "branch", "", "Branch name (auto-generated from issue if not specified)")
@@ -98,10 +143,16 @@ func init() {
 	agentCloseCmd.Flags().BoolVar(&closeDone, "done", false, "Mark session as completed (issues → done)")
 	agentCloseCmd.Flags().BoolVar(&closeAbandon, "abandon", false, "Mark session as abandoned (issues → open)")
 
+	agentSyncCmd.Flags().BoolVar(&syncRebase, "rebase", false, "Use rebase instead of merge")
+	agentSyncCmd.Flags().BoolVar(&syncForce, "force", false, "Skip dirty worktree check")
+
 	agentCmd.AddCommand(agentLaunchCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentHistoryCmd)
 	agentCmd.AddCommand(agentCloseCmd)
+	agentCmd.AddCommand(agentSyncCmd)
+	agentCmd.AddCommand(agentMergeCmd)
+	agentCmd.AddCommand(agentDiscoverCmd)
 	rootCmd.AddCommand(agentCmd)
 }
 
@@ -431,6 +482,141 @@ func resolveSessionFromCwd(ctx context.Context, s store.Store) (string, error) {
 	}
 	_ = table.Render()
 	return "", fmt.Errorf("ambiguous: multiple sessions found")
+}
+
+func agentSyncRun(sessionRef string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	sessionID := sessionRef
+	if sessionID == "" {
+		sessionID, err = resolveSessionFromCwd(ctx, s)
+		if err != nil {
+			return err
+		}
+	}
+
+	mgr := sessions.NewManager(s)
+	opts := sessions.SyncOptions{
+		Rebase: syncRebase,
+		Force:  syncForce,
+		DryRun: dryRun,
+	}
+
+	result, err := mgr.SyncSession(ctx, sessionID, opts)
+	if err != nil {
+		return err
+	}
+
+	if result.Synced {
+		ui.Success("Already in sync (↑%d)", result.Ahead)
+	} else if result.Success {
+		strategy := "merged"
+		if syncRebase {
+			strategy = "rebased"
+		}
+		ui.Success("Synced (%s) — ↑%d ↓%d", strategy, result.Ahead, result.Behind)
+	} else if len(result.Conflicts) > 0 {
+		ui.Error("Sync conflicts detected:")
+		for _, f := range result.Conflicts {
+			ui.Info("  %s", f)
+		}
+		return fmt.Errorf("resolve conflicts, then sync again")
+	} else if result.Error != "" {
+		return fmt.Errorf("sync: %s", result.Error)
+	}
+
+	return nil
+}
+
+func agentMergeRun(sessionRef string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	sessionID := sessionRef
+	if sessionID == "" {
+		sessionID, err = resolveSessionFromCwd(ctx, s)
+		if err != nil {
+			return err
+		}
+	}
+
+	mgr := sessions.NewManager(s)
+	opts := sessions.MergeOptions{
+		DryRun: dryRun,
+	}
+
+	result, err := mgr.MergeSession(ctx, sessionID, opts)
+	if err != nil {
+		return err
+	}
+
+	if result.Success {
+		if result.PRCreated {
+			ui.Success("PR created: %s", result.PRURL)
+		} else {
+			ui.Success("Merged '%s' into base branch", result.Branch)
+		}
+	} else if len(result.Conflicts) > 0 {
+		ui.Error("Merge conflicts detected:")
+		for _, f := range result.Conflicts {
+			ui.Info("  %s", f)
+		}
+		return fmt.Errorf("resolve conflicts, then merge again")
+	} else if result.Error != "" {
+		return fmt.Errorf("merge: %s", result.Error)
+	}
+
+	return nil
+}
+
+func agentDiscoverRun(projectRef string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	if projectRef == "" {
+		// Try auto-detect from cwd
+		cwd, cwdErr := os.Getwd()
+		if cwdErr == nil {
+			if p, pErr := s.GetProjectByPath(ctx, cwd); pErr == nil {
+				projectRef = p.Name
+			}
+		}
+		if projectRef == "" {
+			return fmt.Errorf("specify a project name or run from a project directory")
+		}
+	}
+
+	p, err := resolveProject(ctx, s, projectRef)
+	if err != nil {
+		return err
+	}
+
+	mgr := sessions.NewManager(s)
+	discovered, err := mgr.DiscoverWorktrees(ctx, p.ID)
+	if err != nil {
+		return err
+	}
+
+	if len(discovered) == 0 {
+		ui.Info("No untracked worktrees found for %s", output.Cyan(p.Name))
+		return nil
+	}
+
+	ui.Success("Discovered %d worktree(s) for %s:", len(discovered), output.Cyan(p.Name))
+	for _, sess := range discovered {
+		ui.Info("  %s → %s", output.Cyan(sess.Branch), sess.WorktreePath)
+	}
+	return nil
 }
 
 // issueToBranch converts an issue title to a branch name.

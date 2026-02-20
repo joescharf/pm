@@ -31,6 +31,9 @@ pm issue review <id>            # Show review history (--base-ref, --head-ref, -
 pm agent list [project]         # Active/idle sessions (default subcommand)
 pm agent launch <project>       # --issue, --branch (resumes idle sessions)
 pm agent close [session_id]     # Close session (--done, --abandon; auto-detects from cwd)
+pm agent sync [session_id]      # Sync worktree with base branch (--rebase, --force; auto-detects from cwd)
+pm agent merge [session_id]     # Merge branch into base (auto-detects from cwd)
+pm agent discover [project]     # Discover untracked worktrees
 pm agent history [project]      # Session history
 
 pm tag list                     # List tags (default subcommand)
@@ -75,6 +78,10 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 | `pm_health_score` | Health score breakdown for a project (project required) |
 | `pm_launch_agent` | Create worktree + agent session, or resume idle session (project required; opt: issue_id, branch) |
 | `pm_close_agent` | Close agent session (session_id required; opt: status — idle/completed/abandoned) |
+| `pm_sync_session` | Sync session worktree with base branch (session_id required; opt: rebase, force, dry_run) |
+| `pm_merge_session` | Merge session branch into base (session_id required; opt: base_branch, create_pr, force, dry_run) |
+| `pm_delete_worktree` | Delete session worktree and abandon session (session_id required; opt: force) |
+| `pm_discover_worktrees` | Discover untracked worktrees and create session records (opt: project) |
 | `pm_prepare_review` | Gather review context for an issue (issue_id required; opt: base_ref, head_ref, app_url) |
 | `pm_save_review` | Save review verdict and transition issue (issue_id + verdict + summary required; opt: categories, failure_reasons) |
 | `pm_update_project` | Update project metadata (project required; opt: description, build_cmd, serve_cmd, serve_port) |
@@ -85,6 +92,8 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 - **Auto-detection**: `pm` and `pm issue` auto-detect project from cwd
 - **Issue lifecycle**: open -> in_progress -> done -> [AI review] -> closed (pass) / in_progress (fail)
 - **Session lifecycle**: active -> idle -> completed/abandoned (idle = worktree exists, no active Claude session)
+- **Session operations**: sync (pull base into feature), merge (feature into base), delete worktree, discover untracked worktrees
+- **Conflict states**: none, sync_conflict, merge_conflict — tracked on sessions with conflict file list
 - **Issue cascading**: session completed -> issue done; session abandoned -> issue open; review pass -> closed; review fail -> in_progress
 - **Priorities**: low, medium, high
 - **Types**: feature, bug, chore

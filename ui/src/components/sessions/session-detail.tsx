@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TimeAgo } from "@/components/shared/time-ago";
+import { SyncButton, MergeButton, DeleteWorktreeButton } from "./session-actions";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { SessionStatus } from "@/lib/types";
@@ -42,7 +43,7 @@ export function SessionDetail() {
       {
         onSuccess: () => toast.success(`Session ${status}`),
         onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
-      }
+      },
     );
   };
 
@@ -55,12 +56,12 @@ export function SessionDetail() {
           if (data.command) {
             navigator.clipboard.writeText(data.command).then(
               () => toast.info("Command copied to clipboard"),
-              () => {}
+              () => {},
             );
           }
         },
         onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
-      }
+      },
     );
   };
 
@@ -89,15 +90,34 @@ export function SessionDetail() {
   }
 
   const isLive = session.Status === "active" || session.Status === "idle";
+  const hasConflict = session.ConflictState !== "none";
+  let conflictFiles: string[] = [];
+  try {
+    if (session.ConflictFiles) {
+      conflictFiles = JSON.parse(session.ConflictFiles);
+    }
+  } catch {
+    // ignore parse errors
+  }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">
-            Session: {session.Branch || session.ID.slice(0, 12)}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-bold tracking-tight">
+              Session: {session.Branch || session.ID.slice(0, 12)}
+            </h2>
+            {session.Discovered && (
+              <Badge
+                variant="outline"
+                className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+              >
+                discovered
+              </Badge>
+            )}
+          </div>
           <p className="text-muted-foreground text-sm mt-1">
             {session.ProjectName && (
               <>
@@ -209,7 +229,7 @@ export function SessionDetail() {
                       "ml-2 text-xs",
                       session.WorktreeExists
                         ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-                        : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                        : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
                     )}
                   >
                     {session.WorktreeExists ? "exists" : "missing"}
@@ -220,6 +240,74 @@ export function SessionDetail() {
           </dl>
         </CardContent>
       </Card>
+
+      {/* Operations */}
+      {isLive && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Operations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2 flex-wrap">
+              <SyncButton session={session} />
+              <MergeButton session={session} />
+              <DeleteWorktreeButton session={session} />
+            </div>
+            {session.LastSyncAt && (
+              <p className="text-xs text-muted-foreground mt-3">
+                Last synced: <TimeAgo date={session.LastSyncAt} />
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Conflict / Error State */}
+      {(hasConflict || session.LastError) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {hasConflict ? "Conflicts" : "Last Error"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {hasConflict && (
+              <div>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-xs",
+                    session.ConflictState === "sync_conflict"
+                      ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300"
+                      : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
+                  )}
+                >
+                  {session.ConflictState === "sync_conflict"
+                    ? "Sync conflict"
+                    : "Merge conflict"}
+                </Badge>
+                {conflictFiles.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {conflictFiles.map((f) => (
+                      <li key={f} className="font-mono text-xs text-muted-foreground">
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Resolve conflicts in the worktree, then sync again to clear this state.
+                </p>
+              </div>
+            )}
+            {session.LastError && (
+              <div>
+                <p className="text-sm text-destructive">{session.LastError}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Git State */}
       <Card>
@@ -257,7 +345,7 @@ export function SessionDetail() {
                       "text-xs",
                       session.IsDirty
                         ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300"
-                        : "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+                        : "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
                     )}
                   >
                     {session.IsDirty ? "dirty" : "clean"}
@@ -303,6 +391,14 @@ export function SessionDetail() {
                 <dt className="text-muted-foreground">Last Active</dt>
                 <dd className="mt-0.5">
                   <TimeAgo date={session.LastActiveAt} />
+                </dd>
+              </div>
+            )}
+            {session.LastSyncAt && (
+              <div>
+                <dt className="text-muted-foreground">Last Synced</dt>
+                <dd className="mt-0.5">
+                  <TimeAgo date={session.LastSyncAt} />
                 </dd>
               </div>
             )}

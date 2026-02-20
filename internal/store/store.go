@@ -48,6 +48,8 @@ type Store interface {
 	GetAgentSession(ctx context.Context, id string) (*models.AgentSession, error)
 	GetAgentSessionByWorktreePath(ctx context.Context, path string) (*models.AgentSession, error)
 	ListAgentSessions(ctx context.Context, projectID string, limit int) ([]*models.AgentSession, error)
+	ListAgentSessionsByStatus(ctx context.Context, projectID string, statuses []models.SessionStatus, limit int) ([]*models.AgentSession, error)
+	ListAgentSessionsByWorktreePaths(ctx context.Context, paths []string) ([]*models.AgentSession, error)
 	UpdateAgentSession(ctx context.Context, session *models.AgentSession) error
 
 	// Issue Reviews

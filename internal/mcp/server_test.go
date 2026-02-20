@@ -246,6 +246,44 @@ func (m *mockStore) UpdateAgentSession(_ context.Context, session *models.AgentS
 	}
 	return fmt.Errorf("session not found: %s", session.ID)
 }
+func (m *mockStore) ListAgentSessionsByStatus(_ context.Context, projectID string, statuses []models.SessionStatus, limit int) ([]*models.AgentSession, error) {
+	var result []*models.AgentSession
+	for _, s := range m.sessions {
+		if projectID != "" && s.ProjectID != projectID {
+			continue
+		}
+		if len(statuses) > 0 {
+			found := false
+			for _, st := range statuses {
+				if s.Status == st {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		result = append(result, s)
+		if limit > 0 && len(result) >= limit {
+			break
+		}
+	}
+	return result, nil
+}
+func (m *mockStore) ListAgentSessionsByWorktreePaths(_ context.Context, paths []string) ([]*models.AgentSession, error) {
+	pathSet := make(map[string]bool)
+	for _, p := range paths {
+		pathSet[p] = true
+	}
+	var result []*models.AgentSession
+	for _, s := range m.sessions {
+		if pathSet[s.WorktreePath] {
+			result = append(result, s)
+		}
+	}
+	return result, nil
+}
 func (m *mockStore) Migrate(_ context.Context) error { return nil }
 func (m *mockStore) Close() error                    { return nil }
 

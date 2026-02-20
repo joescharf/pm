@@ -40,6 +40,7 @@ export interface Issue {
 }
 
 export type SessionStatus = "active" | "idle" | "completed" | "abandoned";
+export type ConflictState = "none" | "sync_conflict" | "merge_conflict";
 
 export interface AgentSession {
   ID: string;
@@ -56,6 +57,11 @@ export interface AgentSession {
   ProjectName?: string;
   StartedAt: string;
   EndedAt: string | null;
+  LastError: string;
+  LastSyncAt: string | null;
+  ConflictState: ConflictState;
+  ConflictFiles: string;
+  Discovered: boolean;
 }
 
 export interface SessionDetail extends AgentSession {
@@ -65,6 +71,48 @@ export interface SessionDetail extends AgentSession {
   CurrentBranch?: string;
   AheadCount?: number;
   BehindCount?: number;
+}
+
+export interface SyncSessionRequest {
+  rebase?: boolean;
+  force?: boolean;
+  dry_run?: boolean;
+}
+
+export interface SyncSessionResponse {
+  SessionID: string;
+  Branch: string;
+  Success: boolean;
+  Ahead: number;
+  Behind: number;
+  Synced: boolean;
+  Conflicts: string[] | null;
+  Error: string;
+}
+
+export interface MergeSessionRequest {
+  base_branch?: string;
+  create_pr?: boolean;
+  pr_title?: string;
+  pr_body?: string;
+  pr_draft?: boolean;
+  force?: boolean;
+  dry_run?: boolean;
+}
+
+export interface MergeSessionResponse {
+  SessionID: string;
+  Branch: string;
+  Success: boolean;
+  PRCreated: boolean;
+  PRURL: string;
+  Conflicts: string[] | null;
+  Error: string;
+}
+
+export interface DiscoverWorktreesResponse {
+  discovered: AgentSession[];
+  count: number;
 }
 
 export interface Tag {
