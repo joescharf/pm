@@ -126,7 +126,11 @@ func (m *Manager) SyncSession(ctx context.Context, sessionID string, opts SyncOp
 		session.LastSyncAt = &now
 		if syncResult != nil && syncResult.HasConflicts {
 			session.ConflictState = models.ConflictStateSyncConflict
-			conflictJSON, _ := json.Marshal(syncResult.ConflictFiles)
+			files := syncResult.ConflictFiles
+			if files == nil {
+				files = []string{}
+			}
+			conflictJSON, _ := json.Marshal(files)
 			session.ConflictFiles = string(conflictJSON)
 			session.LastError = syncResult.Error.Error()
 		} else if err != nil {
@@ -209,7 +213,11 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 	if !opts.DryRun {
 		if mergeResult != nil && mergeResult.HasConflicts {
 			session.ConflictState = models.ConflictStateMergeConflict
-			conflictJSON, _ := json.Marshal(mergeResult.ConflictFiles)
+			files := mergeResult.ConflictFiles
+			if files == nil {
+				files = []string{}
+			}
+			conflictJSON, _ := json.Marshal(files)
 			session.ConflictFiles = string(conflictJSON)
 			session.LastError = mergeResult.Error.Error()
 		} else if mergeResult != nil && mergeResult.Success {

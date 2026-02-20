@@ -105,7 +105,10 @@ export function SessionDetail() {
   let conflictFiles: string[] = [];
   try {
     if (session.ConflictFiles) {
-      conflictFiles = JSON.parse(session.ConflictFiles);
+      const parsed = JSON.parse(session.ConflictFiles);
+      if (Array.isArray(parsed)) {
+        conflictFiles = parsed;
+      }
     }
   } catch {
     // ignore parse errors
