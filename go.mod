@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/anthropics/anthropic-sdk-go v1.22.1
 	github.com/fatih/color v1.18.0
+	github.com/joescharf/wt v0.7.0
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/olekukonko/tablewriter v1.1.3
@@ -28,7 +29,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
-	github.com/joescharf/wt v0.6.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -60,4 +60,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
