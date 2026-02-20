@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -611,15 +612,19 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 
 		// Mark issue as in_progress
 		issue.Status = models.IssueStatusInProgress
-		_ = s.store.UpdateIssue(ctx, issue)
+		if err := s.store.UpdateIssue(ctx, issue); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to update issue status: %v", err)), nil
+		}
 	}
 
 	if branch == "" {
 		return mcp.NewToolResultError("specify branch or issue_id to generate a branch name"), nil
 	}
 
-	// Determine worktree path (convention: sibling directory named after branch)
-	worktreePath := fmt.Sprintf("%s-%s", p.Path, strings.ReplaceAll(branch, "/", "-"))
+	// Determine worktree path to match wt's convention: {project}.worktrees/{last-branch-segment}
+	branchParts := strings.Split(branch, "/")
+	worktreeDirname := branchParts[len(branchParts)-1]
+	worktreePath := filepath.Join(p.Path+".worktrees", worktreeDirname)
 
 	// Check for existing idle session on this branch
 	existingSessions, _ := s.store.ListAgentSessions(ctx, p.ID, 0)
@@ -732,8 +737,10 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 		return mcp.NewToolResultError(fmt.Sprintf("invalid status: %s (must be idle, completed, or abandoned)", targetStr)), nil
 	}
 
-	// Enrich session with git info before closing
+	// Enrich session with git info before closing; capture worktree path for iTerm cleanup
+	var worktreePath string
 	if sess, err := s.store.GetAgentSession(ctx, sessionID); err == nil {
+		worktreePath = sess.WorktreePath
 		agent.EnrichSessionWithGitInfo(sess, s.git)
 		_ = s.store.UpdateAgentSession(ctx, sess)
 	}
@@ -741,6 +748,12 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 	session, err := agent.CloseSession(ctx, s.store, sessionID, target)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Close iTerm window for terminal states (completed/abandoned)
+	if worktreePath != "" && target != models.SessionStatusIdle {
+		wtDir := filepath.Base(worktreePath)
+		sessions.CloseITermWindowByName(wtDir)
 	}
 
 	result := map[string]any{

@@ -265,7 +265,7 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 		wtDir := filepath.Base(session.WorktreePath)
 
 		// 1. Close iTerm window (best-effort)
-		_ = closeITermWindowByName(wtDir)
+		_ = CloseITermWindowByName(wtDir)
 
 		// 2. Remove worktree and delete branch
 		deleteOpts := ops.DeleteOptions{
@@ -299,6 +299,10 @@ func (m *Manager) DeleteWorktree(ctx context.Context, sessionID string, force bo
 	if err != nil {
 		return fmt.Errorf("get project: %w", err)
 	}
+
+	// Close iTerm window before removing worktree
+	wtDir := filepath.Base(session.WorktreePath)
+	CloseITermWindowByName(wtDir)
 
 	gitClient := newRepoBoundClient(project.Path)
 
@@ -470,10 +474,10 @@ func (m *Manager) Reconcile(ctx context.Context) (int, error) {
 	return totalUpdated, nil
 }
 
-// closeITermWindowByName closes any iTerm2 window whose session name contains
+// CloseITermWindowByName closes any iTerm2 window whose session name contains
 // the given name. This matches wt's naming convention (worktree dirname).
 // Best-effort: errors are returned but callers typically ignore them.
-func closeITermWindowByName(name string) error {
+func CloseITermWindowByName(name string) error {
 	script := fmt.Sprintf(`tell application "iTerm2"
 	repeat with w in windows
 		repeat with t in tabs of w

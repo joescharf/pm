@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -194,8 +195,10 @@ func agentLaunchRun(projectRef string) error {
 		return fmt.Errorf("specify --branch or --issue to generate a branch name")
 	}
 
-	// Compute worktree path
-	worktreePath := fmt.Sprintf("%s-%s", p.Path, strings.ReplaceAll(branch, "/", "-"))
+	// Compute worktree path to match wt's convention: {project}.worktrees/{last-branch-segment}
+	branchParts := strings.Split(branch, "/")
+	worktreeDirname := branchParts[len(branchParts)-1]
+	worktreePath := filepath.Join(p.Path+".worktrees", worktreeDirname)
 
 	// Check for existing idle session on this branch
 	existingSessions, _ := s.ListAgentSessions(ctx, p.ID, 0)
@@ -429,9 +432,21 @@ func agentCloseRun(sessionRef string) error {
 		_ = s.UpdateAgentSession(ctx, sess)
 	}
 
+	// Get worktree path before closing (for iTerm cleanup)
+	var worktreePath string
+	if sess, lookupErr := s.GetAgentSession(ctx, sessionID); lookupErr == nil {
+		worktreePath = sess.WorktreePath
+	}
+
 	session, err := agent.CloseSession(ctx, s, sessionID, target)
 	if err != nil {
 		return err
+	}
+
+	// Close iTerm window for terminal states (completed/abandoned)
+	if worktreePath != "" && target != models.SessionStatusIdle {
+		wtDir := filepath.Base(worktreePath)
+		sessions.CloseITermWindowByName(wtDir)
 	}
 
 	ui.Success("Session %s → %s", output.Cyan(shortID(session.ID)), output.Cyan(string(session.Status)))
