@@ -79,6 +79,8 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("POST /api/v1/sessions/{id}/sync", s.syncSession)
 	mux.HandleFunc("POST /api/v1/sessions/{id}/merge", s.mergeSession)
 	mux.HandleFunc("DELETE /api/v1/sessions/{id}/worktree", s.deleteWorktree)
+	mux.HandleFunc("GET /api/v1/sessions/{id}/close-check", s.closeCheck)
+	mux.HandleFunc("POST /api/v1/sessions/{id}/reactivate", s.reactivateSession)
 	mux.HandleFunc("POST /api/v1/sessions/discover", s.discoverWorktrees)
 
 	mux.HandleFunc("GET /api/v1/tags", s.listTags)
@@ -772,6 +774,124 @@ func (s *Server) deleteWorktree(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// --- Close Check ---
+
+type closeCheckWarning struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+type closeCheckResponse struct {
+	SessionID      string              `json:"session_id"`
+	WorktreeExists bool                `json:"worktree_exists"`
+	IsDirty        bool                `json:"is_dirty"`
+	AheadCount     int                 `json:"ahead_count"`
+	BehindCount    int                 `json:"behind_count"`
+	ConflictState  string              `json:"conflict_state"`
+	Branch         string              `json:"branch"`
+	BaseBranch     string              `json:"base_branch"`
+	ReadyToClose   bool                `json:"ready_to_close"`
+	Warnings       []closeCheckWarning `json:"warnings"`
+}
+
+func (s *Server) closeCheck(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	sess, err := s.store.GetAgentSession(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	resp := closeCheckResponse{
+		SessionID:     sess.ID,
+		Branch:        sess.Branch,
+		BaseBranch:    "main",
+		ConflictState: string(sess.ConflictState),
+	}
+
+	if sess.WorktreePath != "" {
+		if _, err := os.Stat(sess.WorktreePath); err == nil {
+			resp.WorktreeExists = true
+
+			if dirty, err := s.git.IsDirty(sess.WorktreePath); err == nil {
+				resp.IsDirty = dirty
+			}
+			if ahead, behind, err := s.git.AheadBehind(sess.WorktreePath, "main"); err == nil {
+				resp.AheadCount = ahead
+				resp.BehindCount = behind
+			}
+		}
+	}
+
+	// Build warnings
+	if resp.IsDirty {
+		resp.Warnings = append(resp.Warnings, closeCheckWarning{
+			Type:    "dirty",
+			Message: "Worktree has uncommitted changes",
+		})
+	}
+	if resp.AheadCount > 0 {
+		resp.Warnings = append(resp.Warnings, closeCheckWarning{
+			Type:    "unmerged",
+			Message: fmt.Sprintf("%d commit(s) not merged to main", resp.AheadCount),
+		})
+	}
+	if resp.BehindCount > 0 {
+		resp.Warnings = append(resp.Warnings, closeCheckWarning{
+			Type:    "behind",
+			Message: fmt.Sprintf("%d commit(s) behind main", resp.BehindCount),
+		})
+	}
+	if sess.ConflictState != models.ConflictStateNone {
+		resp.Warnings = append(resp.Warnings, closeCheckWarning{
+			Type:    "conflict",
+			Message: fmt.Sprintf("Session has %s", sess.ConflictState),
+		})
+	}
+
+	resp.ReadyToClose = !resp.IsDirty && resp.AheadCount == 0 && sess.ConflictState == models.ConflictStateNone
+
+	if resp.Warnings == nil {
+		resp.Warnings = []closeCheckWarning{}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// --- Reactivate Session ---
+
+func (s *Server) reactivateSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	sess, err := s.store.GetAgentSession(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	// Verify worktree exists
+	if sess.WorktreePath == "" {
+		writeError(w, http.StatusBadRequest, "session has no worktree path")
+		return
+	}
+	if _, err := os.Stat(sess.WorktreePath); err != nil {
+		writeError(w, http.StatusBadRequest, "worktree no longer exists on disk")
+		return
+	}
+
+	session, err := agent.ReactivateSession(r.Context(), s.store, id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"session_id": session.ID,
+		"status":     session.Status,
+	})
+}
+
 func (s *Server) discoverWorktrees(w http.ResponseWriter, r *http.Request) {
 	// Accept project_id from query param or JSON body
 	projectID := r.URL.Query().Get("project_id")
@@ -784,27 +904,43 @@ func (s *Server) discoverWorktrees(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if projectID == "" {
-		writeError(w, http.StatusBadRequest, "project_id is required")
-		return
-	}
+	var allDiscovered []*models.AgentSession
 
-	discovered, err := s.sessions.DiscoverWorktrees(r.Context(), projectID)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			writeError(w, http.StatusNotFound, err.Error())
+	if projectID != "" {
+		// Discover for a specific project
+		discovered, err := s.sessions.DiscoverWorktrees(r.Context(), projectID)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		allDiscovered = discovered
+	} else {
+		// Discover across all projects
+		projects, err := s.store.ListProjects(r.Context(), "")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, p := range projects {
+			discovered, err := s.sessions.DiscoverWorktrees(r.Context(), p.ID)
+			if err != nil {
+				// Skip projects that fail (e.g., missing repo)
+				continue
+			}
+			allDiscovered = append(allDiscovered, discovered...)
+		}
 	}
 
-	if discovered == nil {
-		discovered = []*models.AgentSession{}
+	if allDiscovered == nil {
+		allDiscovered = []*models.AgentSession{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"discovered": discovered,
-		"count":      len(discovered),
+		"discovered": allDiscovered,
+		"count":      len(allDiscovered),
 	})
 }
 
