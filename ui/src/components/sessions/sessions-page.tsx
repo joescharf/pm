@@ -25,9 +25,10 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { TimeAgo } from "@/components/shared/time-ago";
 import { SyncButton, MergeButton, DeleteWorktreeButton } from "./session-actions";
+import { CloseWizardDialog } from "./close-wizard-dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { SessionStatus } from "@/lib/types";
+import type { SessionStatus, AgentSession } from "@/lib/types";
 
 const STATUS_TABS: { label: string; value: string; statuses?: SessionStatus[] }[] = [
   { label: "All", value: "all" },
@@ -90,6 +91,7 @@ export function SessionsPage() {
   const closeAgent = useCloseAgent();
   const resumeAgent = useResumeAgent();
   const discover = useDiscoverWorktrees();
+  const [closeWizardSession, setCloseWizardSession] = useState<AgentSession | null>(null);
 
   const handleClose = (sessionId: string, status: "idle" | "completed" | "abandoned") => {
     closeAgent.mutate(
@@ -289,8 +291,7 @@ export function SessionsPage() {
                         variant="outline"
                         size="sm"
                         className="h-7 text-xs"
-                        onClick={() => handleClose(s.ID, "completed")}
-                        disabled={closeAgent.isPending}
+                        onClick={() => setCloseWizardSession(s)}
                       >
                         Done
                       </Button>
@@ -310,6 +311,14 @@ export function SessionsPage() {
             ))}
           </TableBody>
         </Table>
+      )}
+
+      {closeWizardSession && (
+        <CloseWizardDialog
+          session={closeWizardSession}
+          open={!!closeWizardSession}
+          onOpenChange={(open) => { if (!open) setCloseWizardSession(null); }}
+        />
       )}
     </div>
   );

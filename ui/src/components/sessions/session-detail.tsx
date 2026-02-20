@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router";
-import { useSession } from "@/hooks/use-sessions";
+import { useSession, useReactivateSession } from "@/hooks/use-sessions";
 import { useCloseAgent, useResumeAgent } from "@/hooks/use-agent";
+import { CloseWizardDialog } from "./close-wizard-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +38,15 @@ export function SessionDetail() {
   const { data: session, isLoading, error } = useSession(id!);
   const closeAgent = useCloseAgent();
   const resumeAgent = useResumeAgent();
+  const [closeWizardOpen, setCloseWizardOpen] = useState(false);
+  const reactivate = useReactivateSession();
+
+  const handleReactivate = () => {
+    reactivate.mutate(session!.ID, {
+      onSuccess: () => toast.success("Session reactivated"),
+      onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+    });
+  };
 
   const handleClose = (status: "idle" | "completed" | "abandoned") => {
     closeAgent.mutate(
@@ -155,8 +166,7 @@ export function SessionDetail() {
             )}
             <Button
               variant="outline"
-              onClick={() => handleClose("completed")}
-              disabled={closeAgent.isPending}
+              onClick={() => setCloseWizardOpen(true)}
             >
               Done
             </Button>
@@ -166,6 +176,16 @@ export function SessionDetail() {
               disabled={closeAgent.isPending}
             >
               Abandon
+            </Button>
+          </div>
+        )}
+        {!isLive && session.WorktreeExists && (
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleReactivate}
+              disabled={reactivate.isPending}
+            >
+              {reactivate.isPending ? "Reactivating..." : "Reactivate"}
             </Button>
           </div>
         )}
@@ -413,6 +433,14 @@ export function SessionDetail() {
           </dl>
         </CardContent>
       </Card>
+
+      {session && (
+        <CloseWizardDialog
+          session={session}
+          open={closeWizardOpen}
+          onOpenChange={setCloseWizardOpen}
+        />
+      )}
     </div>
   );
 }

@@ -115,6 +115,29 @@ export interface DiscoverWorktreesResponse {
   count: number;
 }
 
+export interface CloseCheckWarning {
+  type: string;
+  message: string;
+}
+
+export interface CloseCheckResponse {
+  session_id: string;
+  worktree_exists: boolean;
+  is_dirty: boolean;
+  ahead_count: number;
+  behind_count: number;
+  conflict_state: string;
+  branch: string;
+  base_branch: string;
+  ready_to_close: boolean;
+  warnings: CloseCheckWarning[];
+}
+
+export interface ReactivateResponse {
+  session_id: string;
+  status: string;
+}
+
 export interface Tag {
   ID: string;
   Name: string;

@@ -9,6 +9,8 @@ import type {
   MergeSessionRequest,
   MergeSessionResponse,
   DiscoverWorktreesResponse,
+  CloseCheckResponse,
+  ReactivateResponse,
 } from "@/lib/types";
 
 export function useSessions(projectId?: string, status?: SessionStatus[]) {
@@ -89,6 +91,30 @@ export function useDiscoverWorktrees() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+}
+
+export function useCloseCheck(sessionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["close-check", sessionId],
+    queryFn: () => apiFetch<CloseCheckResponse>(`/api/v1/sessions/${sessionId}/close-check`),
+    enabled,
+    refetchInterval: false,
+  });
+}
+
+export function useReactivateSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch<ReactivateResponse>(`/api/v1/sessions/${sessionId}/reactivate`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["session"] });
+      qc.invalidateQueries({ queryKey: ["issues"] });
     },
   });
 }
