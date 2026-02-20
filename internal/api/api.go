@@ -76,6 +76,7 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/v1/status/{id}", s.statusProject)
 
 	mux.HandleFunc("GET /api/v1/sessions", s.listSessions)
+	mux.HandleFunc("DELETE /api/v1/sessions/cleanup", s.cleanupSessions)
 	mux.HandleFunc("GET /api/v1/sessions/{id}", s.getSession)
 	mux.HandleFunc("POST /api/v1/sessions/{id}/sync", s.syncSession)
 	mux.HandleFunc("POST /api/v1/sessions/{id}/merge", s.mergeSession)
@@ -953,6 +954,17 @@ func (s *Server) discoverWorktrees(w http.ResponseWriter, r *http.Request) {
 		"discovered": allDiscovered,
 		"count":      len(allDiscovered),
 	})
+}
+
+// --- Cleanup ---
+
+func (s *Server) cleanupSessions(w http.ResponseWriter, r *http.Request) {
+	count, err := s.store.DeleteAllStaleSessions(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"deleted": count})
 }
 
 // --- Tags ---

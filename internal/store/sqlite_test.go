@@ -804,3 +804,45 @@ func TestListIssues_SortedByStatusThenPriority(t *testing.T) {
 	assert.Equal(t, "done-high", titles[4])
 	assert.Equal(t, "closed-low", titles[5])
 }
+
+func TestDeleteAllStaleSessions(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	p := &models.Project{Name: "bulk-test", Path: "/tmp/bulk-test"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Create 3 stale sessions
+	for i := 0; i < 3; i++ {
+		sess := &models.AgentSession{
+			ProjectID:   p.ID,
+			Branch:      "feature/bulk",
+			Status:      models.SessionStatusAbandoned,
+			CommitCount: 0,
+		}
+		require.NoError(t, s.CreateAgentSession(ctx, sess))
+		tenSec := sess.StartedAt.Add(10 * time.Second)
+		sess.EndedAt = &tenSec
+		require.NoError(t, s.UpdateAgentSession(ctx, sess))
+	}
+
+	// Create 1 non-stale (has commits)
+	good := &models.AgentSession{
+		ProjectID:   p.ID,
+		Branch:      "feature/good",
+		Status:      models.SessionStatusAbandoned,
+		CommitCount: 5,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, good))
+	end := good.StartedAt.Add(10 * time.Second)
+	good.EndedAt = &end
+	require.NoError(t, s.UpdateAgentSession(ctx, good))
+
+	count, err := s.DeleteAllStaleSessions(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	sessions, err := s.ListAgentSessions(ctx, "", 0)
+	require.NoError(t, err)
+	assert.Len(t, sessions, 1)
+}

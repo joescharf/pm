@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -339,4 +340,34 @@ func TestCloseAgent(t *testing.T) {
 	// Verify issue was cascaded
 	updatedIssue, _ := s.GetIssue(ctx, issue.ID)
 	assert.Equal(t, models.IssueStatusDone, updatedIssue.Status)
+}
+
+func TestCleanupSessions_API(t *testing.T) {
+	srv, s := setupTestServer(t)
+	router := srv.Router()
+	ctx := context.Background()
+
+	p := &models.Project{Name: "cleanup-api", Path: "/tmp/cleanup-api"}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	// Create a stale session
+	stale := &models.AgentSession{
+		ProjectID:   p.ID,
+		Branch:      "feature/stale",
+		Status:      models.SessionStatusAbandoned,
+		CommitCount: 0,
+	}
+	require.NoError(t, s.CreateAgentSession(ctx, stale))
+	tenSec := stale.StartedAt.Add(10 * time.Second)
+	stale.EndedAt = &tenSec
+	require.NoError(t, s.UpdateAgentSession(ctx, stale))
+
+	req := httptest.NewRequest("DELETE", "/api/v1/sessions/cleanup", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result map[string]int64
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+	assert.Equal(t, int64(1), result["deleted"])
 }

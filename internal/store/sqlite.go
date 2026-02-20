@@ -816,6 +816,20 @@ func (s *SQLiteStore) DeleteStaleSessions(ctx context.Context, projectID, branch
 	return res.RowsAffected()
 }
 
+// DeleteAllStaleSessions removes all abandoned sessions with 0 commits and duration < 60s.
+func (s *SQLiteStore) DeleteAllStaleSessions(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM agent_sessions
+		WHERE status = 'abandoned' AND commit_count = 0
+		AND ended_at IS NOT NULL
+		AND (julianday(substr(ended_at, 1, 19)) - julianday(substr(started_at, 1, 19))) * 86400 < 60`,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("delete all stale sessions: %w", err)
+	}
+	return res.RowsAffected()
+}
+
 // --- Issue Reviews ---
 
 func (s *SQLiteStore) CreateIssueReview(ctx context.Context, review *models.IssueReview) error {
