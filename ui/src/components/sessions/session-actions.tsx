@@ -31,8 +31,14 @@ function isLive(s: Session) {
 }
 
 // --- Sync Dialog ---
-export function SyncButton({ session }: { session: Session }) {
-  const [open, setOpen] = useState(false);
+export function SyncButton({ session, open: externalOpen, onOpenChange }: {
+  session: Session;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [strategy, setStrategy] = useState<"merge" | "rebase">("merge");
   const sync = useSyncSession();
 
@@ -55,13 +61,15 @@ export function SyncButton({ session }: { session: Session }) {
     );
   };
 
-  if (!isLive(session)) return null;
+  if (externalOpen === undefined && !isLive(session)) return null;
 
   return (
     <>
-      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setOpen(true)}>
-        Sync
-      </Button>
+      {externalOpen === undefined && (
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setOpen(true)}>
+          Sync
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -100,8 +108,14 @@ export function SyncButton({ session }: { session: Session }) {
 }
 
 // --- Merge Dialog ---
-export function MergeButton({ session }: { session: Session }) {
-  const [open, setOpen] = useState(false);
+export function MergeButton({ session, open: externalOpen, onOpenChange }: {
+  session: Session;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [method, setMethod] = useState<"pr" | "merge" | "rebase">("pr");
   const [force, setForce] = useState(false);
   const [cleanup, setCleanup] = useState(true);
@@ -133,7 +147,7 @@ export function MergeButton({ session }: { session: Session }) {
               },
             });
           } else if (data.Success) {
-            const cleanedMsg = data.Cleaned ? " — worktree and branch cleaned up" : "";
+            const cleanedMsg = data.Cleaned ? " \u2014 worktree and branch cleaned up" : "";
             toast.success(`${methodLabels[method]} completed successfully${cleanedMsg}`);
           }
         },
@@ -142,13 +156,15 @@ export function MergeButton({ session }: { session: Session }) {
     );
   };
 
-  if (!isLive(session)) return null;
+  if (externalOpen === undefined && !isLive(session)) return null;
 
   return (
     <>
-      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setOpen(true)}>
-        Merge
-      </Button>
+      {externalOpen === undefined && (
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setOpen(true)}>
+          Merge
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

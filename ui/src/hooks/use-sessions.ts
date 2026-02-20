@@ -95,6 +95,19 @@ export function useDiscoverWorktrees() {
   });
 }
 
+export function useCleanupSessions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ deleted: number }>("/api/v1/sessions/cleanup", {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+}
+
 export function useCloseCheck(sessionId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["close-check", sessionId],

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { useSessions, useDiscoverWorktrees } from "@/hooks/use-sessions";
+import { useSessions, useDiscoverWorktrees, useCleanupSessions } from "@/hooks/use-sessions";
 import { useProjects } from "@/hooks/use-projects";
 import { useCloseAgent, useResumeAgent } from "@/hooks/use-agent";
 import {
@@ -22,20 +22,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { MoreVertical } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TimeAgo } from "@/components/shared/time-ago";
-import { SyncButton, MergeButton, DeleteWorktreeButton } from "./session-actions";
+import { SyncButton, MergeButton } from "./session-actions";
 import { CloseWizardDialog } from "./close-wizard-dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { SessionStatus, AgentSession } from "@/lib/types";
 
 const STATUS_TABS: { label: string; value: string; statuses?: SessionStatus[] }[] = [
-  { label: "All", value: "all" },
-  { label: "Active", value: "active", statuses: ["active"] },
-  { label: "Idle", value: "idle", statuses: ["idle"] },
+  { label: "Active", value: "active_idle", statuses: ["active", "idle"] },
   { label: "Completed", value: "completed", statuses: ["completed"] },
   { label: "Abandoned", value: "abandoned", statuses: ["abandoned"] },
+  { label: "All", value: "all" },
 ];
 
 function sessionColor(status: SessionStatus): string {
@@ -77,7 +85,7 @@ function formatDuration(start: string, end: string | null): string {
 
 export function SessionsPage() {
   const navigate = useNavigate();
-  const [statusTab, setStatusTab] = useState("all");
+  const [statusTab, setStatusTab] = useState("active_idle");
   const [projectFilter, setProjectFilter] = useState<string>("");
 
   const activeTab = STATUS_TABS.find((t) => t.value === statusTab);
@@ -91,7 +99,10 @@ export function SessionsPage() {
   const closeAgent = useCloseAgent();
   const resumeAgent = useResumeAgent();
   const discover = useDiscoverWorktrees();
+  const cleanup = useCleanupSessions();
   const [closeWizardSession, setCloseWizardSession] = useState<AgentSession | null>(null);
+  const [syncSession, setSyncSession] = useState<AgentSession | null>(null);
+  const [mergeSession, setMergeSession] = useState<AgentSession | null>(null);
 
   const handleClose = (sessionId: string, status: "idle" | "completed" | "abandoned") => {
     closeAgent.mutate(
@@ -147,14 +158,30 @@ export function SessionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">Sessions</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleDiscover}
-          disabled={discover.isPending}
-        >
-          {discover.isPending ? "Discovering..." : "Discover Worktrees"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              cleanup.mutate(undefined, {
+                onSuccess: (data) => {
+                  if (data.deleted > 0) {
+                    toast.success(`Cleaned up ${data.deleted} stale session(s)`);
+                  } else {
+                    toast.info("No stale sessions to clean up");
+                  }
+                },
+                onError: (err) => toast.error(`Cleanup failed: ${(err as Error).message}`),
+              });
+            }}
+            disabled={cleanup.isPending}
+          >
+            {cleanup.isPending ? "Cleaning..." : "Clean Up"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDiscover} disabled={discover.isPending}>
+            {discover.isPending ? "Discovering..." : "Discover Worktrees"}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -259,51 +286,53 @@ export function SessionsPage() {
                 </TableCell>
                 <TableCell>
                   {(s.Status === "active" || s.Status === "idle") && (
-                    <div
-                      className="flex items-center gap-1 flex-wrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {s.Status === "idle" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => handleResume(s.ID)}
-                          disabled={resumeAgent.isPending}
-                        >
-                          Resume
-                        </Button>
-                      )}
-                      {s.Status === "active" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => handleClose(s.ID, "idle")}
-                          disabled={closeAgent.isPending}
-                        >
-                          Pause
-                        </Button>
-                      )}
-                      <SyncButton session={s} />
-                      <MergeButton session={s} />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => setCloseWizardSession(s)}
-                      >
-                        Done
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs text-destructive"
-                        onClick={() => handleClose(s.ID, "abandoned")}
-                        disabled={closeAgent.isPending}
-                      >
-                        Abandon
-                      </Button>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                            <MoreVertical className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuGroup>
+                            {s.Status === "idle" && (
+                              <DropdownMenuItem
+                                onClick={() => handleResume(s.ID)}
+                                disabled={resumeAgent.isPending}
+                              >
+                                Resume
+                              </DropdownMenuItem>
+                            )}
+                            {s.Status === "active" && (
+                              <DropdownMenuItem
+                                onClick={() => handleClose(s.ID, "idle")}
+                                disabled={closeAgent.isPending}
+                              >
+                                Pause
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem onClick={() => setSyncSession(s)}>
+                              Sync
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setMergeSession(s)}>
+                              Merge
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuGroup>
+                            <DropdownMenuItem onClick={() => setCloseWizardSession(s)}>
+                              Done
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => handleClose(s.ID, "abandoned")}
+                              disabled={closeAgent.isPending}
+                            >
+                              Abandon
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   )}
                 </TableCell>
@@ -318,6 +347,20 @@ export function SessionsPage() {
           session={closeWizardSession}
           open={!!closeWizardSession}
           onOpenChange={(open) => { if (!open) setCloseWizardSession(null); }}
+        />
+      )}
+      {syncSession && (
+        <SyncButton
+          session={syncSession}
+          open={!!syncSession}
+          onOpenChange={(open) => { if (!open) setSyncSession(null); }}
+        />
+      )}
+      {mergeSession && (
+        <MergeButton
+          session={mergeSession}
+          open={!!mergeSession}
+          onOpenChange={(open) => { if (!open) setMergeSession(null); }}
         />
       )}
     </div>
