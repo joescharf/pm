@@ -232,6 +232,11 @@ func agentLaunchRun(projectRef string) error {
 		}
 	}
 
+	// Auto-purge stale abandoned sessions for this branch
+	if _, err := s.DeleteStaleSessions(ctx, p.ID, branch); err != nil {
+		ui.Warning("Failed to purge stale sessions: %v", err)
+	}
+
 	if dryRun {
 		ui.DryRunMsg("Would launch agent for %s on branch %s", p.Name, branch)
 		return nil

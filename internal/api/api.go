@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -1107,6 +1108,11 @@ func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+
+	// Auto-purge stale abandoned sessions for this branch
+	if _, err := s.store.DeleteStaleSessions(ctx, project.ID, branch); err != nil {
+		slog.Warn("failed to purge stale sessions", "error", err)
 	}
 
 	// Create worktree
