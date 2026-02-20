@@ -42,7 +42,7 @@ func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client
 		wt:       wtc,
 		llm:      llmClient,
 		scorer:   health.NewScorer(),
-		sessions: sessions.NewManager(s),
+		sessions: sessions.NewManager(s, wtc),
 	}
 }
 
