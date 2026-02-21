@@ -14,22 +14,24 @@ import (
 	"github.com/joescharf/pm/internal/git"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/output"
+	"github.com/joescharf/pm/internal/review"
 	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
 )
 
 var (
-	agentIssue   string
-	agentBranch  string
-	agentLimit   int
-	closeDone    bool
-	closeAbandon bool
-	syncRebase   bool
-	syncForce    bool
-	mergeRebase    bool
-	mergeForce     bool
-	mergeNoCleanup bool
+	agentIssue        string
+	agentBranch       string
+	agentLimit        int
+	closeDone         bool
+	closeAbandon      bool
+	syncRebase        bool
+	syncForce         bool
+	mergeRebase       bool
+	mergeForce        bool
+	mergeNoCleanup    bool
+	reviewMaxAttempts int
 )
 
 var agentCmd = &cobra.Command{
@@ -124,6 +126,16 @@ var agentMergeCmd = &cobra.Command{
 	},
 }
 
+var agentReviewCmd = &cobra.Command{
+	Use:   "review <issue-id>",
+	Short: "Launch an AI review agent for a done issue",
+	Long:  "Launches a Claude Code agent in iTerm that autonomously reviews the implementation, fixes issues, runs tests, and submits a review verdict.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return agentReviewRun(args[0])
+	},
+}
+
 var agentDiscoverCmd = &cobra.Command{
 	Use:   "discover [project]",
 	Short: "Discover worktrees not tracked by pm",
@@ -154,6 +166,8 @@ func init() {
 	agentMergeCmd.Flags().BoolVar(&mergeForce, "force", false, "Skip dirty worktree check")
 	agentMergeCmd.Flags().BoolVar(&mergeNoCleanup, "no-cleanup", false, "Skip post-merge cleanup (worktree removal, branch deletion, iTerm close)")
 
+	agentReviewCmd.Flags().IntVar(&reviewMaxAttempts, "max-attempts", 0, "Max review attempts (default from config)")
+
 	agentCmd.AddCommand(agentLaunchCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentHistoryCmd)
@@ -161,6 +175,7 @@ func init() {
 	agentCmd.AddCommand(agentSyncCmd)
 	agentCmd.AddCommand(agentMergeCmd)
 	agentCmd.AddCommand(agentDiscoverCmd)
+	agentCmd.AddCommand(agentReviewCmd)
 	rootCmd.AddCommand(agentCmd)
 }
 
@@ -609,6 +624,30 @@ func agentMergeRun(sessionRef string) error {
 		return fmt.Errorf("merge: %s", result.Error)
 	}
 
+	return nil
+}
+
+func agentReviewRun(issueRef string) error {
+	s, err := getStore()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+
+	cfg := review.DefaultConfig()
+	if reviewMaxAttempts > 0 {
+		cfg.MaxAttempts = reviewMaxAttempts
+	}
+
+	launcher := review.NewLauncher(s, cfg)
+	result, err := launcher.Launch(ctx, issueRef)
+	if err != nil {
+		return err
+	}
+
+	ui.Success("Review agent launched for issue %s", output.Cyan(shortID(result.IssueID)))
+	ui.Info("Session: %s | Branch: %s", output.Cyan(shortID(result.SessionID)), output.Cyan(result.Branch))
+	ui.Info("Worktree: %s", result.WorktreePath)
 	return nil
 }
 

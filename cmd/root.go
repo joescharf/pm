@@ -90,6 +90,8 @@ func initConfig() {
 	viper.SetDefault("agent.auto_launch", false)
 	viper.SetDefault("anthropic.api_key", "")
 	viper.SetDefault("anthropic.model", "claude-haiku-4-5-20251001")
+	viper.SetDefault("review.max_attempts", 3)
+	viper.SetDefault("review.allowed_tools", "Read Write Edit Glob Grep Bash(git:*) Bash(make:*) Bash(go:*) mcp__pm__*")
 
 	// Read config file if it exists (optional)
 	_ = viper.ReadInConfig()

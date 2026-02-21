@@ -18,6 +18,7 @@ import (
 	"github.com/joescharf/pm/internal/health"
 	"github.com/joescharf/pm/internal/llm"
 	"github.com/joescharf/pm/internal/models"
+	"github.com/joescharf/pm/internal/review"
 	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
@@ -67,6 +68,7 @@ func (s *Server) MCPServer() *server.MCPServer {
 	srv.AddTool(s.discoverWorktreesTool())
 	srv.AddTool(s.prepareReviewTool())
 	srv.AddTool(s.saveReviewTool())
+	srv.AddTool(s.launchReviewTool())
 	srv.AddTool(s.updateProjectTool())
 
 	return srv
@@ -1144,6 +1146,39 @@ func (s *Server) handleSaveReview(ctx context.Context, request mcp.CallToolReque
 		"verdict":      verdict,
 		"issue_status": string(issue.Status),
 		"summary":      summary,
+	}
+
+	data, _ := json.Marshal(result)
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// pm_launch_review
+func (s *Server) launchReviewTool() (mcp.Tool, server.ToolHandlerFunc) {
+	tool := mcp.NewTool("pm_launch_review",
+		mcp.WithDescription("Launch an AI review agent for a done issue. Opens a Claude Code session in iTerm that autonomously reviews the implementation, fixes issues, runs tests, and submits a review verdict."),
+		mcp.WithString("issue_id", mcp.Required(), mcp.Description("Issue ID (full ULID or unique prefix)")),
+		mcp.WithString("max_attempts", mcp.Description("Maximum review attempts (default from config)")),
+	)
+	return tool, s.handleLaunchReview
+}
+
+func (s *Server) handleLaunchReview(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	issueID, err := request.RequireString("issue_id")
+	if err != nil {
+		return mcp.NewToolResultError("missing required parameter: issue_id"), nil
+	}
+
+	cfg := review.DefaultConfig()
+	if maxStr := request.GetString("max_attempts", ""); maxStr != "" {
+		if max, err := strconv.Atoi(maxStr); err == nil && max > 0 {
+			cfg.MaxAttempts = max
+		}
+	}
+
+	launcher := review.NewLauncher(s.store, cfg)
+	result, err := launcher.Launch(ctx, issueID)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	data, _ := json.Marshal(result)

@@ -16,6 +16,7 @@ import (
 	"github.com/joescharf/pm/internal/llm"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/refresh"
+	"github.com/joescharf/pm/internal/review"
 	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
@@ -71,6 +72,7 @@ func (s *Server) Router() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/issues/{id}/reviews", s.listIssueReviews)
 	mux.HandleFunc("POST /api/v1/issues/{id}/reviews", s.createIssueReview)
+	mux.HandleFunc("POST /api/v1/issues/{id}/review-agent", s.launchReviewAgent)
 
 	mux.HandleFunc("GET /api/v1/status", s.statusOverview)
 	mux.HandleFunc("GET /api/v1/status/{id}", s.statusProject)
@@ -479,6 +481,45 @@ func (s *Server) createIssueReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, review)
+}
+
+// --- Review Agent ---
+
+func (s *Server) launchReviewAgent(w http.ResponseWriter, r *http.Request) {
+	issueID := r.PathValue("id")
+
+	var req struct {
+		MaxAttempts int `json:"max_attempts"`
+	}
+	if r.Body != nil && r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	cfg := review.DefaultConfig()
+	if req.MaxAttempts > 0 {
+		cfg.MaxAttempts = req.MaxAttempts
+	}
+
+	launcher := review.NewLauncher(s.store, cfg)
+	result, err := launcher.Launch(r.Context(), issueID)
+	if err != nil {
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "not found"):
+			writeError(w, http.StatusNotFound, msg)
+		case strings.Contains(msg, "already in progress"):
+			writeError(w, http.StatusConflict, msg)
+		case strings.Contains(msg, "must be in"):
+			writeError(w, http.StatusBadRequest, msg)
+		case strings.Contains(msg, "no session with worktree"):
+			writeError(w, http.StatusBadRequest, msg)
+		default:
+			writeError(w, http.StatusInternalServerError, msg)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // --- Status ---

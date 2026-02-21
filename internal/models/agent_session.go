@@ -2,6 +2,14 @@ package models
 
 import "time"
 
+// SessionType represents the type of an agent session.
+type SessionType string
+
+const (
+	SessionTypeImplementation SessionType = "implementation"
+	SessionTypeReview         SessionType = "review"
+)
+
 // SessionStatus represents the state of an agent session.
 type SessionStatus string
 
@@ -43,4 +51,8 @@ type AgentSession struct {
 	ConflictState ConflictState // "none", "sync_conflict", "merge_conflict"
 	ConflictFiles string        // JSON array of conflicting file paths
 	Discovered    bool          // true if auto-discovered (not created by pm)
+
+	// Review agent fields
+	SessionType   SessionType // "implementation" or "review"
+	ReviewAttempt int         // review iteration count
 }

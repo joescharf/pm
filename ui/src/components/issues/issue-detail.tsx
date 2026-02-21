@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
-import { Pencil, Trash2, ArrowLeft, Sparkles } from "lucide-react";
+import { Pencil, Trash2, ArrowLeft, Sparkles, Bot } from "lucide-react";
 import { useIssue, useDeleteIssue, useEnrichIssue } from "@/hooks/use-issues";
 import { useIssueReviews } from "@/hooks/use-reviews";
+import { useLaunchReviewAgent } from "@/hooks/use-review-agent";
 import { ReviewForm } from "@/components/issues/review-form";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -138,6 +139,7 @@ export function IssueDetail() {
   const { data: issue, isLoading, error } = useIssue(id!);
   const deleteIssue = useDeleteIssue();
   const enrichIssue = useEnrichIssue();
+  const launchReview = useLaunchReviewAgent();
   const [editOpen, setEditOpen] = useState(false);
 
   const handleDelete = () => {
@@ -200,6 +202,25 @@ export function IssueDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {issue.Status === "done" && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => {
+                launchReview.mutate(
+                  { issueId: issue.ID },
+                  {
+                    onSuccess: () => toast.success("AI review agent launched"),
+                    onError: (err) => toast.error(`Failed to launch review: ${(err as Error).message}`),
+                  }
+                );
+              }}
+              disabled={launchReview.isPending}
+            >
+              <Bot className="size-4" />
+              {launchReview.isPending ? "Launching..." : "Start AI Review"}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

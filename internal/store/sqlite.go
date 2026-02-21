@@ -589,16 +589,20 @@ func (s *SQLiteStore) CreateAgentSession(ctx context.Context, session *models.Ag
 	if session.ConflictFiles == "" {
 		session.ConflictFiles = "[]"
 	}
+	if session.SessionType == "" {
+		session.SessionType = models.SessionTypeImplementation
+	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO agent_sessions (id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, last_error, last_sync_at, conflict_state, conflict_files, discovered)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO agent_sessions (id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, last_error, last_sync_at, conflict_state, conflict_files, discovered, session_type, review_attempt)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.ID, session.ProjectID, session.IssueID, session.Branch,
 		session.WorktreePath, string(session.Status), session.Outcome,
 		session.CommitCount, session.LastCommitHash, session.LastCommitMessage,
 		session.LastActiveAt, session.StartedAt,
 		session.LastError, session.LastSyncAt, string(session.ConflictState),
 		session.ConflictFiles, session.Discovered,
+		string(session.SessionType), session.ReviewAttempt,
 	)
 	if err != nil {
 		return fmt.Errorf("create agent session: %w", err)
@@ -608,11 +612,11 @@ func (s *SQLiteStore) CreateAgentSession(ctx context.Context, session *models.Ag
 
 func (s *SQLiteStore) GetAgentSession(ctx context.Context, id string) (*models.AgentSession, error) {
 	session := &models.AgentSession{}
-	var status, conflictState string
+	var status, conflictState, sessionType string
 	var endedAt, lastActiveAt, lastSyncAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered
+		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered, session_type, review_attempt
 		FROM agent_sessions WHERE id = ?`, id,
 	).Scan(&session.ID, &session.ProjectID, &session.IssueID,
 		&session.Branch, &session.WorktreePath, &status,
@@ -620,13 +624,15 @@ func (s *SQLiteStore) GetAgentSession(ctx context.Context, id string) (*models.A
 		&session.LastCommitHash, &session.LastCommitMessage, &lastActiveAt,
 		&session.StartedAt, &endedAt,
 		&session.LastError, &lastSyncAt, &conflictState,
-		&session.ConflictFiles, &session.Discovered)
+		&session.ConflictFiles, &session.Discovered,
+		&sessionType, &session.ReviewAttempt)
 	if err != nil {
 		return nil, fmt.Errorf("agent session not found: %s", id)
 	}
 
 	session.Status = models.SessionStatus(status)
 	session.ConflictState = models.ConflictState(conflictState)
+	session.SessionType = models.SessionType(sessionType)
 	if endedAt.Valid {
 		session.EndedAt = &endedAt.Time
 	}
@@ -641,11 +647,11 @@ func (s *SQLiteStore) GetAgentSession(ctx context.Context, id string) (*models.A
 
 func (s *SQLiteStore) GetAgentSessionByWorktreePath(ctx context.Context, path string) (*models.AgentSession, error) {
 	session := &models.AgentSession{}
-	var status, conflictState string
+	var status, conflictState, sessionType string
 	var endedAt, lastActiveAt, lastSyncAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered
+		`SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered, session_type, review_attempt
 		FROM agent_sessions WHERE worktree_path = ? AND status IN ('active', 'idle')
 		ORDER BY started_at DESC LIMIT 1`, path,
 	).Scan(&session.ID, &session.ProjectID, &session.IssueID,
@@ -654,13 +660,15 @@ func (s *SQLiteStore) GetAgentSessionByWorktreePath(ctx context.Context, path st
 		&session.LastCommitHash, &session.LastCommitMessage, &lastActiveAt,
 		&session.StartedAt, &endedAt,
 		&session.LastError, &lastSyncAt, &conflictState,
-		&session.ConflictFiles, &session.Discovered)
+		&session.ConflictFiles, &session.Discovered,
+		&sessionType, &session.ReviewAttempt)
 	if err != nil {
 		return nil, fmt.Errorf("no active/idle session for worktree: %s", path)
 	}
 
 	session.Status = models.SessionStatus(status)
 	session.ConflictState = models.ConflictState(conflictState)
+	session.SessionType = models.SessionType(sessionType)
 	if endedAt.Valid {
 		session.EndedAt = &endedAt.Time
 	}
@@ -674,7 +682,7 @@ func (s *SQLiteStore) GetAgentSessionByWorktreePath(ctx context.Context, path st
 }
 
 func (s *SQLiteStore) ListAgentSessions(ctx context.Context, projectID string, limit int) ([]*models.AgentSession, error) {
-	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered
+	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered, session_type, review_attempt
 		FROM agent_sessions`
 	var args []any
 
@@ -692,7 +700,7 @@ func (s *SQLiteStore) ListAgentSessions(ctx context.Context, projectID string, l
 }
 
 func (s *SQLiteStore) ListAgentSessionsByStatus(ctx context.Context, projectID string, statuses []models.SessionStatus, limit int) ([]*models.AgentSession, error) {
-	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered
+	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered, session_type, review_attempt
 		FROM agent_sessions WHERE 1=1`
 	var args []any
 
@@ -735,7 +743,7 @@ func (s *SQLiteStore) ListAgentSessionsByWorktreePaths(ctx context.Context, path
 		args = append(args, p)
 	}
 
-	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered
+	query := `SELECT id, project_id, issue_id, branch, worktree_path, status, outcome, commit_count, last_commit_hash, last_commit_message, last_active_at, started_at, ended_at, last_error, last_sync_at, conflict_state, conflict_files, discovered, session_type, review_attempt
 		FROM agent_sessions WHERE worktree_path IN (` + placeholders + `) ORDER BY started_at DESC`
 
 	return s.scanAgentSessions(ctx, query, args...)
@@ -752,7 +760,7 @@ func (s *SQLiteStore) scanAgentSessions(ctx context.Context, query string, args 
 	var sessions []*models.AgentSession
 	for rows.Next() {
 		session := &models.AgentSession{}
-		var status, conflictState string
+		var status, conflictState, sessionType string
 		var endedAt, lastActiveAt, lastSyncAt sql.NullTime
 
 		if err := rows.Scan(&session.ID, &session.ProjectID, &session.IssueID,
@@ -761,12 +769,14 @@ func (s *SQLiteStore) scanAgentSessions(ctx context.Context, query string, args 
 			&session.LastCommitHash, &session.LastCommitMessage, &lastActiveAt,
 			&session.StartedAt, &endedAt,
 			&session.LastError, &lastSyncAt, &conflictState,
-			&session.ConflictFiles, &session.Discovered); err != nil {
+			&session.ConflictFiles, &session.Discovered,
+			&sessionType, &session.ReviewAttempt); err != nil {
 			return nil, fmt.Errorf("scan agent session: %w", err)
 		}
 
 		session.Status = models.SessionStatus(status)
 		session.ConflictState = models.ConflictState(conflictState)
+		session.SessionType = models.SessionType(sessionType)
 		if endedAt.Valid {
 			session.EndedAt = &endedAt.Time
 		}
@@ -783,12 +793,13 @@ func (s *SQLiteStore) scanAgentSessions(ctx context.Context, query string, args 
 
 func (s *SQLiteStore) UpdateAgentSession(ctx context.Context, session *models.AgentSession) error {
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE agent_sessions SET status=?, outcome=?, commit_count=?, last_commit_hash=?, last_commit_message=?, last_active_at=?, ended_at=?, last_error=?, last_sync_at=?, conflict_state=?, conflict_files=?, discovered=? WHERE id=?`,
+		`UPDATE agent_sessions SET status=?, outcome=?, commit_count=?, last_commit_hash=?, last_commit_message=?, last_active_at=?, ended_at=?, last_error=?, last_sync_at=?, conflict_state=?, conflict_files=?, discovered=?, session_type=?, review_attempt=? WHERE id=?`,
 		string(session.Status), session.Outcome, session.CommitCount,
 		session.LastCommitHash, session.LastCommitMessage, session.LastActiveAt,
 		session.EndedAt,
 		session.LastError, session.LastSyncAt, string(session.ConflictState),
 		session.ConflictFiles, session.Discovered,
+		string(session.SessionType), session.ReviewAttempt,
 		session.ID,
 	)
 	if err != nil {

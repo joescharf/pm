@@ -30,6 +30,7 @@ pm issue review <id>            # Show review history (--base-ref, --head-ref, -
 
 pm agent list [project]         # Active/idle sessions (default subcommand)
 pm agent launch <project>       # --issue, --branch (resumes idle sessions)
+pm agent review <issue-id>      # Launch AI review agent for a done issue (--max-attempts)
 pm agent close [session_id]     # Close session (--done, --abandon; auto-detects from cwd)
 pm agent sync [session_id]      # Sync worktree with base branch (--rebase, --force; auto-detects from cwd)
 pm agent merge [session_id]     # Merge branch into base (auto-detects from cwd)
@@ -84,6 +85,7 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 | `pm_discover_worktrees` | Discover untracked worktrees and create session records (opt: project) |
 | `pm_prepare_review` | Gather review context for an issue (issue_id required; opt: base_ref, head_ref, app_url) |
 | `pm_save_review` | Save review verdict and transition issue (issue_id + verdict + summary required; opt: categories, failure_reasons) |
+| `pm_launch_review` | Launch AI review agent in iTerm for a done issue (issue_id required; opt: max_attempts) |
 | `pm_update_project` | Update project metadata (project required; opt: description, build_cmd, serve_cmd, serve_port) |
 
 ## Key Patterns
@@ -92,6 +94,8 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 - **Auto-detection**: `pm` and `pm issue` auto-detect project from cwd
 - **Issue lifecycle**: open -> in_progress -> done -> [AI review] -> closed (pass) / in_progress (fail)
 - **Session lifecycle**: active -> idle -> completed/abandoned (idle = worktree exists, no active Claude session)
+- **Session types**: implementation (default), review — tracked via `SessionType` field on AgentSession
+- **Review agent**: `pm agent review <issue-id>` launches Claude in iTerm to autonomously review done issues. Config: `review.max_attempts`, `review.allowed_tools`
 - **Session operations**: sync (pull base into feature), merge (feature into base), delete worktree, discover untracked worktrees
 - **Conflict states**: none, sync_conflict, merge_conflict — tracked on sessions with conflict file list
 - **Issue cascading**: session completed -> issue done; session abandoned -> issue open; review pass -> closed; review fail -> in_progress

@@ -208,6 +208,14 @@ export interface LaunchAgentResponse {
   command: string;
 }
 
+export interface LaunchReviewAgentResponse {
+  session_id: string;
+  issue_id: string;
+  branch: string;
+  worktree_path: string;
+  command: string;
+}
+
 export interface CloseAgentRequest {
   session_id: string;
   status?: "idle" | "completed" | "abandoned";
