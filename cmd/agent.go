@@ -219,17 +219,16 @@ func agentLaunchRun(projectRef string) error {
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now
 			if err := s.UpdateAgentSession(ctx, sess); err != nil {
-				ui.Warning("Failed to reactivate session: %v", err)
-			} else {
-				resumePath := sess.WorktreePath
-				ui.Success("Resumed session %s for %s on branch %s", output.Cyan(shortID(sess.ID)), output.Cyan(p.Name), output.Cyan(branch))
-				if resolvedIssueID != "" {
-					ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", resumePath, shortID(resolvedIssueID))
-				} else {
-					ui.Info("Run: cd %s && claude", resumePath)
-				}
-				return nil
+				return fmt.Errorf("failed to reactivate session %s: %w", shortID(sess.ID), err)
 			}
+			resumePath := sess.WorktreePath
+			ui.Success("Resumed session %s for %s on branch %s", output.Cyan(shortID(sess.ID)), output.Cyan(p.Name), output.Cyan(branch))
+			if resolvedIssueID != "" {
+				ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", resumePath, shortID(resolvedIssueID))
+			} else {
+				ui.Info("Run: cd %s && claude", resumePath)
+			}
+			return nil
 		}
 	}
 
