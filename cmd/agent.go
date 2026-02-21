@@ -18,6 +18,7 @@ import (
 	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
+	"github.com/joescharf/wt/pkg/lifecycle"
 )
 
 var (
@@ -233,17 +234,16 @@ func agentLaunchRun(projectRef string) error {
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now
 			if err := s.UpdateAgentSession(ctx, sess); err != nil {
-				ui.Warning("Failed to reactivate session: %v", err)
-			} else {
-				resumePath := sess.WorktreePath
-				ui.Success("Resumed session %s for %s on branch %s", output.Cyan(shortID(sess.ID)), output.Cyan(p.Name), output.Cyan(branch))
-				if resolvedIssueID != "" {
-					ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", resumePath, shortID(resolvedIssueID))
-				} else {
-					ui.Info("Run: cd %s && claude", resumePath)
-				}
-				return nil
+				return fmt.Errorf("failed to reactivate session %s: %w", shortID(sess.ID), err)
 			}
+			resumePath := sess.WorktreePath
+			ui.Success("Resumed session %s for %s on branch %s", output.Cyan(shortID(sess.ID)), output.Cyan(p.Name), output.Cyan(branch))
+			if resolvedIssueID != "" {
+				ui.Info("Run: cd %s && claude \"Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete.\"", resumePath, shortID(resolvedIssueID))
+			} else {
+				ui.Info("Run: cd %s && claude", resumePath)
+			}
+			return nil
 		}
 	}
 
@@ -309,8 +309,9 @@ func agentListRun(projectRef string) error {
 		return err
 	}
 
-	// Reconcile orphaned worktrees
-	agent.ReconcileSessions(ctx, s, sessions)
+	// Reconcile orphaned worktrees and detect active claude processes
+	detector := &agent.OSProcessDetector{}
+	agent.ReconcileSessions(ctx, s, sessions, agent.WithProcessDetector(detector))
 
 	// Filter to active/idle
 	var live []*models.AgentSession
@@ -452,10 +453,14 @@ func agentCloseRun(sessionRef string) error {
 		_ = s.UpdateAgentSession(ctx, sess)
 	}
 
-	// Get worktree path before closing (for iTerm cleanup)
+	// Get worktree path and project path before closing (for lifecycle cleanup)
 	var worktreePath string
+	var projectPath string
 	if sess, lookupErr := s.GetAgentSession(ctx, sessionID); lookupErr == nil {
 		worktreePath = sess.WorktreePath
+		if proj, projErr := s.GetProject(ctx, sess.ProjectID); projErr == nil {
+			projectPath = proj.Path
+		}
 	}
 
 	session, err := agent.CloseSession(ctx, s, sessionID, target)
@@ -463,9 +468,13 @@ func agentCloseRun(sessionRef string) error {
 		return err
 	}
 
-	// Close iTerm window for terminal states (completed/abandoned)
-	if worktreePath != "" && target != models.SessionStatusIdle {
-		_ = sessions.CloseITermWindow(worktreePath)
+	// For abandoned: full worktree teardown via lifecycle (close iTerm + remove worktree + untrust + cleanup state)
+	if worktreePath != "" && target == models.SessionStatusAbandoned && projectPath != "" {
+		wtClient := wt.NewClient()
+		lm := wtClient.LifecycleForRepo(projectPath)
+		_ = lm.Delete(context.Background(), worktreePath, lifecycle.DeleteOptions{Force: true})
+		session.WorktreePath = ""
+		_ = s.UpdateAgentSession(ctx, session)
 	}
 
 	ui.Success("Session %s → %s", output.Cyan(shortID(session.ID)), output.Cyan(string(session.Status)))
@@ -540,7 +549,7 @@ func agentSyncRun(sessionRef string) error {
 		}
 	}
 
-	mgr := sessions.NewManager(s)
+	mgr := sessions.NewManager(s, nil)
 	opts := sessions.SyncOptions{
 		Rebase: syncRebase,
 		Force:  syncForce,
@@ -588,7 +597,8 @@ func agentMergeRun(sessionRef string) error {
 		}
 	}
 
-	mgr := sessions.NewManager(s)
+	wtClient := wt.NewClient()
+	mgr := sessions.NewManager(s, wtClient)
 	opts := sessions.MergeOptions{
 		Rebase:  mergeRebase,
 		Force:   mergeForce,
@@ -676,7 +686,7 @@ func agentDiscoverRun(projectRef string) error {
 		return err
 	}
 
-	mgr := sessions.NewManager(s)
+	mgr := sessions.NewManager(s, nil)
 	discovered, err := mgr.DiscoverWorktrees(ctx, p.ID)
 	if err != nil {
 		return err

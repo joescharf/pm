@@ -22,6 +22,7 @@ import (
 	"github.com/joescharf/pm/internal/sessions"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
+	"github.com/joescharf/wt/pkg/lifecycle"
 )
 
 // Server wraps the pm data layer and exposes it as MCP tools.
@@ -45,7 +46,7 @@ func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client
 		wt:       wtc,
 		llm:      llmClient,
 		scorer:   health.NewScorer(),
-		sessions: sessions.NewManager(s),
+		sessions: sessions.NewManager(s, wtc),
 	}
 }
 
@@ -641,28 +642,29 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 			sess.Status = models.SessionStatusActive
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now
-			if err := s.store.UpdateAgentSession(ctx, sess); err == nil {
-				command := fmt.Sprintf("cd %s && claude", sess.WorktreePath)
-				if issueID != "" {
-					shortIssueID := issueID
-					if len(shortIssueID) > 12 {
-						shortIssueID = shortIssueID[:12]
-					}
-					command = fmt.Sprintf(`cd %s && claude "Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete."`, sess.WorktreePath, shortIssueID)
-				}
-				result := map[string]any{
-					"session_id":    sess.ID,
-					"project":       p.Name,
-					"branch":        branch,
-					"worktree_path": sess.WorktreePath,
-					"issue_id":      issueID,
-					"status":        string(sess.Status),
-					"resumed":       true,
-					"command":       command,
-				}
-				data, _ := json.Marshal(result)
-				return mcp.NewToolResultText(string(data)), nil
+			if err := s.store.UpdateAgentSession(ctx, sess); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to reactivate session %s: %v", sess.ID, err)), nil
 			}
+			command := fmt.Sprintf("cd %s && claude", sess.WorktreePath)
+			if issueID != "" {
+				shortIssueID := issueID
+				if len(shortIssueID) > 12 {
+					shortIssueID = shortIssueID[:12]
+				}
+				command = fmt.Sprintf(`cd %s && claude "Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete."`, sess.WorktreePath, shortIssueID)
+			}
+			result := map[string]any{
+				"session_id":    sess.ID,
+				"project":       p.Name,
+				"branch":        branch,
+				"worktree_path": sess.WorktreePath,
+				"issue_id":      issueID,
+				"status":        string(sess.Status),
+				"resumed":       true,
+				"command":       command,
+			}
+			data, _ := json.Marshal(result)
+			return mcp.NewToolResultText(string(data)), nil
 		}
 	}
 
@@ -739,12 +741,17 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 		return mcp.NewToolResultError(fmt.Sprintf("invalid status: %s (must be idle, completed, or abandoned)", targetStr)), nil
 	}
 
-	// Enrich session with git info before closing; capture worktree path for iTerm cleanup
+	// Enrich session with git info before closing; capture worktree path for cleanup
 	var worktreePath string
+	var projectPath string
 	if sess, err := s.store.GetAgentSession(ctx, sessionID); err == nil {
 		worktreePath = sess.WorktreePath
 		agent.EnrichSessionWithGitInfo(sess, s.git)
 		_ = s.store.UpdateAgentSession(ctx, sess)
+		// Look up project path for lifecycle operations
+		if proj, projErr := s.store.GetProject(ctx, sess.ProjectID); projErr == nil {
+			projectPath = proj.Path
+		}
 	}
 
 	session, err := agent.CloseSession(ctx, s.store, sessionID, target)
@@ -752,9 +759,13 @@ func (s *Server) handleCloseAgent(ctx context.Context, request mcp.CallToolReque
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// Close iTerm window for terminal states (completed/abandoned)
-	if worktreePath != "" && target != models.SessionStatusIdle {
-		_ = sessions.CloseITermWindow(worktreePath)
+	// For abandoned: full worktree teardown via lifecycle (close iTerm + remove worktree + untrust + cleanup state)
+	if worktreePath != "" && target == models.SessionStatusAbandoned && s.wt != nil && projectPath != "" {
+		lm := s.wt.LifecycleForRepo(projectPath)
+		_ = lm.Delete(ctx, worktreePath, lifecycle.DeleteOptions{Force: true})
+		// Clear worktree path since it's been deleted
+		session.WorktreePath = ""
+		_ = s.store.UpdateAgentSession(ctx, session)
 	}
 
 	result := map[string]any{

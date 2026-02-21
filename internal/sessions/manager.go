@@ -5,23 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/store"
+	pmwt "github.com/joescharf/pm/internal/wt"
+	"github.com/joescharf/wt/pkg/lifecycle"
 	"github.com/joescharf/wt/pkg/ops"
 )
 
 // Manager orchestrates wt ops with pm's session store.
 type Manager struct {
 	store store.Store
+	wt    pmwt.Client
 }
 
 // NewManager creates a new sessions manager.
-func NewManager(s store.Store) *Manager {
-	return &Manager{store: s}
+// The wt client may be nil (worktree lifecycle operations will be skipped).
+func NewManager(s store.Store, wtc pmwt.Client) *Manager {
+	return &Manager{store: s, wt: wtc}
 }
 
 // SyncOptions configures a session sync operation.
@@ -260,29 +262,25 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 		return result, err
 	}
 
-	// Post-merge cleanup: remove worktree, delete branch, close iTerm window
+	// Post-merge cleanup: close iTerm + remove worktree + untrust + cleanup state via lifecycle
 	if result.Success && !opts.CreatePR && opts.Cleanup && !opts.DryRun && session.WorktreePath != "" {
-		// 1. Close iTerm window (best-effort)
-		_ = CloseITermWindow(session.WorktreePath)
-
-		// 2. Remove worktree and delete branch
-		deleteOpts := ops.DeleteOptions{
-			Force:        true,
-			DeleteBranch: true,
-			DryRun:       false,
-		}
-		logger := &nopLogger{}
-		if delErr := ops.Delete(ctx, gitClient, nil, logger, session.WorktreePath, deleteOpts, nil, nil); delErr == nil {
-			session.WorktreePath = ""
-			_ = m.store.UpdateAgentSession(ctx, session)
-			result.Cleaned = true
+		if m.wt != nil {
+			lm := m.wt.LifecycleForRepo(project.Path)
+			if delErr := lm.Delete(ctx, session.WorktreePath, lifecycle.DeleteOptions{
+				Force:        true,
+				DeleteBranch: true,
+			}); delErr == nil {
+				session.WorktreePath = ""
+				_ = m.store.UpdateAgentSession(ctx, session)
+				result.Cleaned = true
+			}
 		}
 	}
 
 	return result, nil
 }
 
-// DeleteWorktree removes a session's worktree.
+// DeleteWorktree removes a session's worktree via lifecycle (close iTerm + remove git worktree + untrust + cleanup state).
 func (m *Manager) DeleteWorktree(ctx context.Context, sessionID string, force bool) error {
 	session, err := m.store.GetAgentSession(ctx, sessionID)
 	if err != nil {
@@ -293,26 +291,17 @@ func (m *Manager) DeleteWorktree(ctx context.Context, sessionID string, force bo
 		return fmt.Errorf("session %s has no worktree path", sessionID)
 	}
 
-	project, err := m.store.GetProject(ctx, session.ProjectID)
-	if err != nil {
-		return fmt.Errorf("get project: %w", err)
-	}
-
-	// Close iTerm window before removing worktree
-	_ = CloseITermWindow(session.WorktreePath)
-
-	gitClient := newRepoBoundClient(project.Path)
-
-	logger := &nopLogger{}
-	deleteOpts := ops.DeleteOptions{
-		Force:        force,
-		DeleteBranch: false,
-		DryRun:       false,
-	}
-
-	err = ops.Delete(ctx, gitClient, nil, logger, session.WorktreePath, deleteOpts, nil, nil)
-	if err != nil {
-		return fmt.Errorf("delete worktree: %w", err)
+	if m.wt != nil {
+		project, projErr := m.store.GetProject(ctx, session.ProjectID)
+		if projErr != nil {
+			return fmt.Errorf("get project: %w", projErr)
+		}
+		lm := m.wt.LifecycleForRepo(project.Path)
+		if err := lm.Delete(ctx, session.WorktreePath, lifecycle.DeleteOptions{
+			Force: force,
+		}); err != nil {
+			return fmt.Errorf("delete worktree: %w", err)
+		}
 	}
 
 	// Update session
@@ -471,85 +460,6 @@ func (m *Manager) Reconcile(ctx context.Context) (int, error) {
 	}
 
 	return totalUpdated, nil
-}
-
-// CloseITermWindow closes the iTerm2 window for a worktree path.
-// It reads wt's state file to find the unique session ID, then closes by ID.
-// Falls back to name-based matching if state lookup fails.
-// Best-effort: errors are returned but callers typically ignore them.
-func CloseITermWindow(worktreePath string) error {
-	// Try to get unique session ID from wt state file
-	if sessionID := getWtSessionID(worktreePath); sessionID != "" {
-		return closeITermWindowByID(sessionID)
-	}
-	// Fallback: name-based match using worktree dirname
-	return closeITermWindowByName(filepath.Base(worktreePath))
-}
-
-// getWtSessionID reads the wt state file and returns the claude_session_id for a worktree path.
-func getWtSessionID(worktreePath string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	stateFile := filepath.Join(home, ".config", "wt", "state.json")
-	data, err := os.ReadFile(stateFile)
-	if err != nil {
-		return ""
-	}
-
-	var state struct {
-		Worktrees map[string]struct {
-			ClaudeSessionID string `json:"claude_session_id"`
-		} `json:"worktrees"`
-	}
-	if err := json.Unmarshal(data, &state); err != nil {
-		return ""
-	}
-
-	if wt, ok := state.Worktrees[worktreePath]; ok {
-		return wt.ClaudeSessionID
-	}
-	return ""
-}
-
-// closeITermWindowByID closes an iTerm2 window by unique session ID.
-func closeITermWindowByID(sessionID string) error {
-	script := fmt.Sprintf(`tell application "iTerm2"
-	repeat with w in windows
-		repeat with t in tabs of w
-			repeat with s in sessions of t
-				if unique ID of s is "%s" then
-					close w
-					return true
-				end if
-			end repeat
-		end repeat
-	end repeat
-	return false
-end tell`, sessionID)
-	_, err := exec.Command("osascript", "-e", script).Output()
-	return err
-}
-
-// closeITermWindowByName closes any iTerm2 window whose session name contains
-// the given name. Fallback for when wt state is unavailable.
-func closeITermWindowByName(name string) error {
-	script := fmt.Sprintf(`tell application "iTerm2"
-	repeat with w in windows
-		repeat with t in tabs of w
-			repeat with s in sessions of t
-				if name of s contains "%s" then
-					close w
-					return true
-				end if
-			end repeat
-		end repeat
-	end repeat
-	return false
-end tell`, name)
-	_, err := exec.Command("osascript", "-e", script).Output()
-	return err
 }
 
 // nopLogger discards all log output.

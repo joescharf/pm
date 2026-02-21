@@ -17,6 +17,7 @@ import (
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/store"
 	"github.com/joescharf/pm/internal/wt"
+	"github.com/joescharf/wt/pkg/lifecycle"
 )
 
 // ---------------------------------------------------------------------------
@@ -393,8 +394,10 @@ func (m *mockWTClient) Create(repoPath, branch string) error {
 	m.created = append(m.created, struct{ repo, branch string }{repoPath, branch})
 	return nil
 }
-func (m *mockWTClient) List(_ string) ([]wt.WorktreeInfo, error) { return m.worktrees, nil }
-func (m *mockWTClient) Delete(_, _ string) error                 { return nil }
+func (m *mockWTClient) List(_ string) ([]wt.WorktreeInfo, error)          { return m.worktrees, nil }
+func (m *mockWTClient) Delete(_, _ string) error                          { return nil }
+func (m *mockWTClient) Lifecycle() *lifecycle.Manager                     { return nil }
+func (m *mockWTClient) LifecycleForRepo(_ string) *lifecycle.Manager      { return nil }
 
 // ---------------------------------------------------------------------------
 // Test helpers
