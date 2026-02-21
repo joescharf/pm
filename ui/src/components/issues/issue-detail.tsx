@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router";
 import { Pencil, Trash2, ArrowLeft, Sparkles } from "lucide-react";
 import { useIssue, useDeleteIssue, useEnrichIssue } from "@/hooks/use-issues";
 import { useIssueReviews } from "@/hooks/use-reviews";
+import { ReviewForm } from "@/components/issues/review-form";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -337,6 +338,11 @@ export function IssueDetail() {
             <pre className="text-sm whitespace-pre-wrap font-mono text-muted-foreground bg-muted rounded-md p-4">{issue.AIPrompt}</pre>
           </CardContent>
         </Card>
+      )}
+
+      {/* Submit Review (shown for non-closed issues) */}
+      {issue.Status !== "closed" && (
+        <ReviewForm issueId={issue.ID} defaultExpanded={issue.Status === "done"} />
       )}
 
       {/* Reviews */}

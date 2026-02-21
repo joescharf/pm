@@ -434,7 +434,16 @@ func (s *Server) createIssueReview(w http.ResponseWriter, r *http.Request) {
 		DiffStats         string   `json:"diff_stats"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	if body.Verdict != "pass" && body.Verdict != "fail" {
+		writeError(w, http.StatusBadRequest, "verdict must be 'pass' or 'fail'")
+		return
+	}
+	if body.Summary == "" {
+		writeError(w, http.StatusBadRequest, "summary is required")
 		return
 	}
 
@@ -452,13 +461,24 @@ func (s *Server) createIssueReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.CreateIssueReview(r.Context(), review); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(review)
+	// Transition issue status based on verdict (matches MCP pm_save_review behavior)
+	if issue, err := s.store.GetIssue(r.Context(), issueID); err == nil {
+		if body.Verdict == "pass" {
+			issue.Status = models.IssueStatusClosed
+			now := time.Now().UTC()
+			issue.ClosedAt = &now
+		} else {
+			issue.Status = models.IssueStatusInProgress
+			issue.ClosedAt = nil
+		}
+		_ = s.store.UpdateIssue(r.Context(), issue)
+	}
+
+	writeJSON(w, http.StatusCreated, review)
 }
 
 // --- Status ---
