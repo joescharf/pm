@@ -922,7 +922,7 @@ func (s *Server) handleDiscoverWorktrees(ctx context.Context, request mcp.CallTo
 // pm_prepare_review
 func (s *Server) prepareReviewTool() (mcp.Tool, server.ToolHandlerFunc) {
 	tool := mcp.NewTool("pm_prepare_review",
-		mcp.WithDescription("Gather all context needed to review an issue's implementation. Returns issue requirements, git diff, changed files, UI review flags, and review history. The calling agent should analyze this context and then call pm_save_review with the verdict."),
+		mcp.WithDescription("Gather context needed to review an issue's implementation. Returns issue requirements, diff stats, changed file list, UI review flags, and review history. The agent should use `git diff` directly to inspect the actual changes. Call pm_save_review with the verdict when done."),
 		mcp.WithString("issue_id", mcp.Required(), mcp.Description("Issue ID (full ULID or unique prefix)")),
 		mcp.WithString("base_ref", mcp.Description("Base ref for diff (default: main, or auto-detected from session branch)")),
 		mcp.WithString("head_ref", mcp.Description("Head ref for diff (default: session branch, or HEAD)")),
@@ -967,11 +967,10 @@ func (s *Server) handlePrepareReview(ctx context.Context, request mcp.CallToolRe
 		headRef = "HEAD"
 	}
 
-	// Get diff (best-effort)
-	var diff, diffStat string
+	// Get diff stats and file list (no full diff — the agent can run git diff itself)
+	var diffStat string
 	var filesChanged []string
 	if s.git != nil && project.Path != "" {
-		diff, _ = s.git.Diff(project.Path, baseRef, headRef)
 		diffStat, _ = s.git.DiffStat(project.Path, baseRef, headRef)
 		filesChanged, _ = s.git.DiffNameOnly(project.Path, baseRef, headRef)
 	}
@@ -1028,8 +1027,8 @@ func (s *Server) handlePrepareReview(ctx context.Context, request mcp.CallToolRe
 			"status":      string(issue.Status),
 		},
 		"session":          sessionOut,
-		"diff":             diff,
 		"diff_stats":       diffStat,
+		"diff_command":     fmt.Sprintf("git diff %s...%s", baseRef, headRef),
 		"files_changed":    filesChanged,
 		"ui_review_needed": uiReviewNeeded,
 		"ui_context":       uiContext,
