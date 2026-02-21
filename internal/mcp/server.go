@@ -640,28 +640,29 @@ func (s *Server) handleLaunchAgent(ctx context.Context, request mcp.CallToolRequ
 			sess.Status = models.SessionStatusActive
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now
-			if err := s.store.UpdateAgentSession(ctx, sess); err == nil {
-				command := fmt.Sprintf("cd %s && claude", sess.WorktreePath)
-				if issueID != "" {
-					shortIssueID := issueID
-					if len(shortIssueID) > 12 {
-						shortIssueID = shortIssueID[:12]
-					}
-					command = fmt.Sprintf(`cd %s && claude "Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete."`, sess.WorktreePath, shortIssueID)
-				}
-				result := map[string]any{
-					"session_id":    sess.ID,
-					"project":       p.Name,
-					"branch":        branch,
-					"worktree_path": sess.WorktreePath,
-					"issue_id":      issueID,
-					"status":        string(sess.Status),
-					"resumed":       true,
-					"command":       command,
-				}
-				data, _ := json.Marshal(result)
-				return mcp.NewToolResultText(string(data)), nil
+			if err := s.store.UpdateAgentSession(ctx, sess); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to reactivate session %s: %v", sess.ID, err)), nil
 			}
+			command := fmt.Sprintf("cd %s && claude", sess.WorktreePath)
+			if issueID != "" {
+				shortIssueID := issueID
+				if len(shortIssueID) > 12 {
+					shortIssueID = shortIssueID[:12]
+				}
+				command = fmt.Sprintf(`cd %s && claude "Use pm MCP tools to look up issue %s and implement it. Update the issue status when complete."`, sess.WorktreePath, shortIssueID)
+			}
+			result := map[string]any{
+				"session_id":    sess.ID,
+				"project":       p.Name,
+				"branch":        branch,
+				"worktree_path": sess.WorktreePath,
+				"issue_id":      issueID,
+				"status":        string(sess.Status),
+				"resumed":       true,
+				"command":       command,
+			}
+			data, _ := json.Marshal(result)
+			return mcp.NewToolResultText(string(data)), nil
 		}
 	}
 
