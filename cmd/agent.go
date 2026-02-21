@@ -294,8 +294,9 @@ func agentListRun(projectRef string) error {
 		return err
 	}
 
-	// Reconcile orphaned worktrees
-	agent.ReconcileSessions(ctx, s, sessions)
+	// Reconcile orphaned worktrees and detect active claude processes
+	detector := &agent.OSProcessDetector{}
+	agent.ReconcileSessions(ctx, s, sessions, agent.WithProcessDetector(detector))
 
 	// Filter to active/idle
 	var live []*models.AgentSession

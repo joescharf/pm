@@ -201,6 +201,9 @@ func setupE2EServer(t *testing.T) (*Server, store.Store, *testWTClient, string) 
 
 	repoPath := initTestRepo(t)
 	srv := NewServer(s, gc, ghc, wtc, nil)
+	// Disable process detection in tests — no real claude processes are running,
+	// so OSProcessDetector would incorrectly transition active → idle.
+	srv.processDetector = nil
 
 	return srv, s, wtc, repoPath
 }

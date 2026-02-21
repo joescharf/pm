@@ -24,26 +24,28 @@ import (
 
 // Server provides the REST API handlers.
 type Server struct {
-	store    store.Store
-	git      git.Client
-	gh       git.GitHubClient
-	wt       wt.Client
-	llm      *llm.Client
-	scorer   *health.Scorer
-	sessions *sessions.Manager
+	store           store.Store
+	git             git.Client
+	gh              git.GitHubClient
+	wt              wt.Client
+	llm             *llm.Client
+	scorer          *health.Scorer
+	sessions        *sessions.Manager
+	processDetector agent.ProcessDetector
 }
 
 // NewServer creates a new API server.
 // The llmClient may be nil if no API key is configured.
 func NewServer(s store.Store, gc git.Client, ghc git.GitHubClient, wtc wt.Client, llmClient *llm.Client) *Server {
 	return &Server{
-		store:    s,
-		git:      gc,
-		gh:       ghc,
-		wt:       wtc,
-		llm:      llmClient,
-		scorer:   health.NewScorer(),
-		sessions: sessions.NewManager(s, wtc),
+		store:           s,
+		git:             gc,
+		gh:              ghc,
+		wt:              wtc,
+		llm:             llmClient,
+		scorer:          health.NewScorer(),
+		sessions:        sessions.NewManager(s, wtc),
+		processDetector: &agent.OSProcessDetector{},
 	}
 }
 
@@ -612,7 +614,11 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	// Lightweight reconcile: check worktree status for returned sessions only.
 	// Reconciliation may change session statuses (e.g. idle → abandoned),
 	// so re-query from DB afterward to get consistent results matching the filter.
-	if changed := agent.ReconcileSessions(r.Context(), s.store, allSessions); changed > 0 && statusFilter != "" {
+	var reconcileOpts []agent.ReconcileOption
+	if s.processDetector != nil {
+		reconcileOpts = append(reconcileOpts, agent.WithProcessDetector(s.processDetector))
+	}
+	if changed := agent.ReconcileSessions(r.Context(), s.store, allSessions, reconcileOpts...); changed > 0 && statusFilter != "" {
 		var statuses []models.SessionStatus
 		for _, st := range strings.Split(statusFilter, ",") {
 			st = strings.TrimSpace(st)
