@@ -618,15 +618,22 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	if s.processDetector != nil {
 		reconcileOpts = append(reconcileOpts, agent.WithProcessDetector(s.processDetector))
 	}
-	if changed := agent.ReconcileSessions(r.Context(), s.store, allSessions, reconcileOpts...); changed > 0 && statusFilter != "" {
-		var statuses []models.SessionStatus
-		for _, st := range strings.Split(statusFilter, ",") {
-			st = strings.TrimSpace(st)
-			if st != "" {
-				statuses = append(statuses, models.SessionStatus(st))
+	if changed := agent.ReconcileSessions(r.Context(), s.store, allSessions, reconcileOpts...); changed > 0 {
+		// Always re-query from DB after reconciliation to get consistent state.
+		// In-memory session objects may have stale statuses if updates were
+		// skipped (e.g. unique constraint) or only partially applied.
+		if statusFilter != "" {
+			var statuses []models.SessionStatus
+			for _, st := range strings.Split(statusFilter, ",") {
+				st = strings.TrimSpace(st)
+				if st != "" {
+					statuses = append(statuses, models.SessionStatus(st))
+				}
 			}
+			allSessions, err = s.store.ListAgentSessionsByStatus(r.Context(), projectID, statuses, 50)
+		} else {
+			allSessions, err = s.store.ListAgentSessions(r.Context(), projectID, 50)
 		}
-		allSessions, err = s.store.ListAgentSessionsByStatus(r.Context(), projectID, statuses, 50)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

@@ -191,3 +191,34 @@ func TestReconcileSessions_IdleStaysIdle_NoDetector(t *testing.T) {
 	assert.Equal(t, 0, cleaned)
 	assert.Equal(t, models.SessionStatusIdle, ms.sessions["sess-1"].Status)
 }
+
+func TestReconcileSessions_AbandonedNotRecovered_WhenBranchHasLiveSession(t *testing.T) {
+	dir := t.TempDir()
+	idleSess := &models.AgentSession{
+		ID:           "sess-live",
+		ProjectID:    "proj-1",
+		Branch:       "feature/foo",
+		WorktreePath: dir,
+		Status:       models.SessionStatusIdle,
+	}
+	abandonedSess := &models.AgentSession{
+		ID:           "sess-dup",
+		ProjectID:    "proj-1",
+		Branch:       "feature/foo",
+		WorktreePath: dir,
+		Status:       models.SessionStatusAbandoned,
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{
+			"sess-live": idleSess,
+			"sess-dup":  abandonedSess,
+		},
+		issues: map[string]*models.Issue{},
+	}
+
+	sessions := []*models.AgentSession{idleSess, abandonedSess}
+	cleaned := ReconcileSessions(context.Background(), ms, sessions)
+	assert.Equal(t, 0, cleaned)
+	assert.Equal(t, models.SessionStatusIdle, ms.sessions["sess-live"].Status)
+	assert.Equal(t, models.SessionStatusAbandoned, ms.sessions["sess-dup"].Status)
+}
