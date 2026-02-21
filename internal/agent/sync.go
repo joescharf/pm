@@ -56,7 +56,11 @@ func ReconcileSessions(ctx context.Context, s SessionStore, sessions []*models.A
 				cleaned++
 			}
 		case wtExists && sess.Status == models.SessionStatusAbandoned:
-			// Worktree recovered/still exists — transition back to idle
+			// Worktree recovered/still exists — transition back to idle,
+			// but only if no other active/idle session owns this branch.
+			if branchHasLiveSession(sessions, sess) {
+				continue
+			}
 			now := time.Now().UTC()
 			sess.LastActiveAt = &now
 			sess.Status = models.SessionStatusIdle
@@ -85,4 +89,18 @@ func ReconcileSessions(ctx context.Context, s SessionStore, sessions []*models.A
 		}
 	}
 	return cleaned
+}
+
+// branchHasLiveSession checks if another active or idle session exists for the same branch.
+func branchHasLiveSession(sessions []*models.AgentSession, target *models.AgentSession) bool {
+	for _, s := range sessions {
+		if s.ID == target.ID {
+			continue
+		}
+		if s.Branch == target.Branch && s.ProjectID == target.ProjectID &&
+			(s.Status == models.SessionStatusActive || s.Status == models.SessionStatusIdle) {
+			return true
+		}
+	}
+	return false
 }
