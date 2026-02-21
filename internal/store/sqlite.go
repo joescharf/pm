@@ -783,12 +783,13 @@ func (s *SQLiteStore) scanAgentSessions(ctx context.Context, query string, args 
 
 func (s *SQLiteStore) UpdateAgentSession(ctx context.Context, session *models.AgentSession) error {
 	result, err := s.db.ExecContext(ctx,
-		`UPDATE agent_sessions SET status=?, outcome=?, commit_count=?, last_commit_hash=?, last_commit_message=?, last_active_at=?, ended_at=?, last_error=?, last_sync_at=?, conflict_state=?, conflict_files=?, discovered=? WHERE id=?`,
+		`UPDATE agent_sessions SET status=?, outcome=?, commit_count=?, last_commit_hash=?, last_commit_message=?, last_active_at=?, ended_at=?, last_error=?, last_sync_at=?, conflict_state=?, conflict_files=?, discovered=?, worktree_path=? WHERE id=?`,
 		string(session.Status), session.Outcome, session.CommitCount,
 		session.LastCommitHash, session.LastCommitMessage, session.LastActiveAt,
 		session.EndedAt,
 		session.LastError, session.LastSyncAt, string(session.ConflictState),
 		session.ConflictFiles, session.Discovered,
+		session.WorktreePath,
 		session.ID,
 	)
 	if err != nil {

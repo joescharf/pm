@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -608,8 +609,23 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Lightweight reconcile: check worktree status for returned sessions only
-	agent.ReconcileSessions(r.Context(), s.store, allSessions)
+	// Lightweight reconcile: check worktree status for returned sessions only.
+	// Reconciliation may change session statuses (e.g. idle → abandoned),
+	// so re-query from DB afterward to get consistent results matching the filter.
+	if changed := agent.ReconcileSessions(r.Context(), s.store, allSessions); changed > 0 && statusFilter != "" {
+		var statuses []models.SessionStatus
+		for _, st := range strings.Split(statusFilter, ",") {
+			st = strings.TrimSpace(st)
+			if st != "" {
+				statuses = append(statuses, models.SessionStatus(st))
+			}
+		}
+		allSessions, err = s.store.ListAgentSessionsByStatus(r.Context(), projectID, statuses, 50)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
 	sessions := allSessions
 
 	// Build enriched responses with project names (cached by project ID)
@@ -1090,8 +1106,10 @@ func (s *Server) launchAgent(w http.ResponseWriter, r *http.Request) {
 	// Generate branch name from first issue title
 	branch := issueToBranch(issues[0].Title)
 
-	// Worktree path: <project.Path>-<branch_with_slashes_replaced_by_hyphens>
-	worktreePath := project.Path + "-" + strings.ReplaceAll(branch, "/", "-")
+	// Worktree path: <project.Path>.worktrees/<last-branch-segment> to match wt convention
+	branchParts := strings.Split(branch, "/")
+	worktreeDirname := branchParts[len(branchParts)-1]
+	worktreePath := filepath.Join(project.Path+".worktrees", worktreeDirname)
 
 	// Check for existing idle session on this branch
 	existingSessions, _ := s.store.ListAgentSessions(ctx, project.ID, 0)
