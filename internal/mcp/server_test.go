@@ -1270,8 +1270,8 @@ func TestSaveReview_Pass(t *testing.T) {
 	assert.Equal(t, models.ReviewVerdictPass, ms.createdReviews[0].Verdict)
 
 	require.Len(t, ms.updatedIssues, 1)
-	assert.Equal(t, models.IssueStatusClosed, ms.updatedIssues[0].Status)
-	assert.NotNil(t, ms.updatedIssues[0].ClosedAt)
+	assert.Equal(t, models.IssueStatusReviewed, ms.updatedIssues[0].Status)
+	assert.Nil(t, ms.updatedIssues[0].ClosedAt)
 }
 
 func TestSaveReview_Fail(t *testing.T) {

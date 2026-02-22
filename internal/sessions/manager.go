@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/joescharf/pm/internal/agent"
 	"github.com/joescharf/pm/internal/models"
 	"github.com/joescharf/pm/internal/store"
 	pmwt "github.com/joescharf/pm/internal/wt"
@@ -100,6 +101,7 @@ func (m *Manager) SyncSession(ctx context.Context, sessionID string, opts SyncOp
 
 	syncOpts := ops.SyncOptions{
 		BaseBranch: "main",
+		Branch:     session.Branch,
 		Strategy:   strategy,
 		Force:      opts.Force,
 		DryRun:     opts.DryRun,
@@ -191,6 +193,7 @@ func (m *Manager) MergeSession(ctx context.Context, sessionID string, opts Merge
 
 	mergeOpts := ops.MergeOptions{
 		BaseBranch: baseBranch,
+		Branch:     session.Branch,
 		Strategy:   strategy,
 		Force:      opts.Force,
 		DryRun:     opts.DryRun,
@@ -423,6 +426,8 @@ func (m *Manager) Reconcile(ctx context.Context) (int, error) {
 			continue
 		}
 
+		conflictChecker := &agent.GitConflictChecker{}
+
 		for _, sess := range sessions {
 			if sess.Status == models.SessionStatusCompleted {
 				continue
@@ -449,6 +454,16 @@ func (m *Manager) Reconcile(ctx context.Context) (int, error) {
 				sess.Status = models.SessionStatusIdle
 				sess.EndedAt = nil
 				updated = true
+			}
+
+			// Clear stale conflict state when worktree no longer has conflicts
+			if wtExists && sess.ConflictState != models.ConflictStateNone {
+				if hasConflicts, err := conflictChecker.HasConflicts(sess.WorktreePath); err == nil && !hasConflicts {
+					sess.ConflictState = models.ConflictStateNone
+					sess.ConflictFiles = "[]"
+					sess.LastError = ""
+					updated = true
+				}
 			}
 
 			if updated {

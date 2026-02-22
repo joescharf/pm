@@ -12,13 +12,22 @@ import (
 type ReconcileOption func(*reconcileConfig)
 
 type reconcileConfig struct {
-	processDetector ProcessDetector
+	processDetector  ProcessDetector
+	conflictChecker  ConflictChecker
 }
 
 // WithProcessDetector enables active/idle transitions based on claude process detection.
 func WithProcessDetector(d ProcessDetector) ReconcileOption {
 	return func(c *reconcileConfig) {
 		c.processDetector = d
+	}
+}
+
+// WithConflictChecker enables automatic clearing of stale conflict state
+// when the worktree no longer has unresolved conflicts.
+func WithConflictChecker(c ConflictChecker) ReconcileOption {
+	return func(cfg *reconcileConfig) {
+		cfg.conflictChecker = c
 	}
 }
 
@@ -82,6 +91,19 @@ func ReconcileSessions(ctx context.Context, s SessionStore, sessions []*models.A
 			// Active + no claude running → idle
 			if !cfg.processDetector.IsClaudeRunning(sess.WorktreePath) {
 				sess.Status = models.SessionStatusIdle
+				if err := s.UpdateAgentSession(ctx, sess); err == nil {
+					cleaned++
+				}
+			}
+		}
+
+		// Check for stale conflict state: if session has a conflict but worktree is clean, clear it
+		if wtExists && cfg.conflictChecker != nil && sess.ConflictState != models.ConflictStateNone {
+			hasConflicts, err := cfg.conflictChecker.HasConflicts(sess.WorktreePath)
+			if err == nil && !hasConflicts {
+				sess.ConflictState = models.ConflictStateNone
+				sess.ConflictFiles = "[]"
+				sess.LastError = ""
 				if err := s.UpdateAgentSession(ctx, sess); err == nil {
 					cleaned++
 				}

@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"os/exec"
 	"testing"
 
 	"github.com/joescharf/pm/internal/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReconcileSessions_OrphanedWorktree(t *testing.T) {
@@ -190,6 +192,95 @@ func TestReconcileSessions_IdleStaysIdle_NoDetector(t *testing.T) {
 	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
 	assert.Equal(t, 0, cleaned)
 	assert.Equal(t, models.SessionStatusIdle, ms.sessions["sess-1"].Status)
+}
+
+// mockConflictChecker implements ConflictChecker for testing.
+type mockConflictChecker struct {
+	conflictPaths map[string]bool
+}
+
+func (m *mockConflictChecker) HasConflicts(worktreePath string) (bool, error) {
+	return m.conflictPaths[worktreePath], nil
+}
+
+func TestReconcileSessions_ClearsStaleConflictState(t *testing.T) {
+	dir := t.TempDir()
+	session := &models.AgentSession{
+		ID:            "sess-1",
+		WorktreePath:  dir,
+		Status:        models.SessionStatusIdle,
+		ConflictState: models.ConflictStateSyncConflict,
+		ConflictFiles: `["file.go"]`,
+		LastError:     "merge conflict in file.go",
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{},
+	}
+	checker := &mockConflictChecker{conflictPaths: map[string]bool{}} // no conflicts
+
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session}, WithConflictChecker(checker))
+	assert.Equal(t, 1, cleaned)
+	assert.Equal(t, models.ConflictStateNone, ms.sessions["sess-1"].ConflictState)
+	assert.Equal(t, "[]", ms.sessions["sess-1"].ConflictFiles)
+	assert.Equal(t, "", ms.sessions["sess-1"].LastError)
+}
+
+func TestReconcileSessions_KeepsConflictStateWhenConflictsExist(t *testing.T) {
+	dir := t.TempDir()
+	session := &models.AgentSession{
+		ID:            "sess-1",
+		WorktreePath:  dir,
+		Status:        models.SessionStatusActive,
+		ConflictState: models.ConflictStateMergeConflict,
+		ConflictFiles: `["main.go"]`,
+		LastError:     "merge conflict",
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{},
+	}
+	checker := &mockConflictChecker{conflictPaths: map[string]bool{dir: true}} // still has conflicts
+
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session}, WithConflictChecker(checker))
+	assert.Equal(t, 0, cleaned)
+	assert.Equal(t, models.ConflictStateMergeConflict, ms.sessions["sess-1"].ConflictState)
+	assert.Equal(t, `["main.go"]`, ms.sessions["sess-1"].ConflictFiles)
+	assert.Equal(t, "merge conflict", ms.sessions["sess-1"].LastError)
+}
+
+func TestReconcileSessions_NoConflictChecker_SkipsCheck(t *testing.T) {
+	dir := t.TempDir()
+	session := &models.AgentSession{
+		ID:            "sess-1",
+		WorktreePath:  dir,
+		Status:        models.SessionStatusIdle,
+		ConflictState: models.ConflictStateSyncConflict,
+		ConflictFiles: `["file.go"]`,
+		LastError:     "conflict",
+	}
+	ms := &mockSessionStore{
+		sessions: map[string]*models.AgentSession{"sess-1": session},
+		issues:   map[string]*models.Issue{},
+	}
+
+	// No WithConflictChecker option
+	cleaned := ReconcileSessions(context.Background(), ms, []*models.AgentSession{session})
+	assert.Equal(t, 0, cleaned)
+	assert.Equal(t, models.ConflictStateSyncConflict, ms.sessions["sess-1"].ConflictState)
+}
+
+func TestGitConflictChecker_WorktreeGitFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// Initialize a real git repo so git rev-parse works
+	cmd := exec.Command("git", "init", "--initial-branch=main", dir)
+	require.NoError(t, cmd.Run())
+
+	checker := &GitConflictChecker{}
+	hasConflicts, err := checker.HasConflicts(dir)
+	assert.NoError(t, err)
+	assert.False(t, hasConflicts)
 }
 
 func TestReconcileSessions_AbandonedNotRecovered_WhenBranchHasLiveSession(t *testing.T) {

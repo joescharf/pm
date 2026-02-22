@@ -9,6 +9,7 @@ const (
 	IssueStatusOpen       IssueStatus = "open"
 	IssueStatusInProgress IssueStatus = "in_progress"
 	IssueStatusDone       IssueStatus = "done"
+	IssueStatusReviewed   IssueStatus = "reviewed"
 	IssueStatusClosed     IssueStatus = "closed"
 )
 
