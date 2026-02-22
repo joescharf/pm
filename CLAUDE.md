@@ -92,7 +92,7 @@ When the MCP server is available, prefer MCP tools over CLI for programmatic acc
 
 - **Short IDs**: First 12 chars of ULID (e.g., `01KHA4NVKG01`)
 - **Auto-detection**: `pm` and `pm issue` auto-detect project from cwd
-- **Issue lifecycle**: open -> in_progress -> done -> [AI review] -> closed (pass) / in_progress (fail)
+- **Issue lifecycle**: open -> in_progress -> done -> [AI review] -> reviewed (pass) / in_progress (fail) -> closed (human)
 - **Session lifecycle**: active -> idle -> completed/abandoned (idle = worktree exists, no active Claude session)
 - **Session types**: implementation (default), review — tracked via `SessionType` field on AgentSession
 - **Review agent**: `pm agent review <issue-id>` launches Claude in iTerm to autonomously review done issues. Config: `review.max_attempts`, `review.allowed_tools`
