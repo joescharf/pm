@@ -470,17 +470,20 @@ func (s *Server) createIssueReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Transition issue status based on verdict (matches MCP pm_save_review behavior)
-	if issue, err := s.store.GetIssue(r.Context(), issueID); err == nil {
+	// Transition issue status based on verdict
+	issue, issErr := s.store.GetIssue(r.Context(), issueID)
+	if issErr != nil {
+		slog.Warn("review saved but could not fetch issue for status transition", "issue_id", issueID, "error", issErr)
+	} else {
 		if body.Verdict == "pass" {
-			issue.Status = models.IssueStatusClosed
-			now := time.Now().UTC()
-			issue.ClosedAt = &now
-		} else {
+			issue.Status = models.IssueStatusReviewed
+		} else if body.Verdict == "fail" {
 			issue.Status = models.IssueStatusInProgress
 			issue.ClosedAt = nil
 		}
-		_ = s.store.UpdateIssue(r.Context(), issue)
+		if err := s.store.UpdateIssue(r.Context(), issue); err != nil {
+			slog.Warn("review saved but issue status transition failed", "issue_id", issueID, "verdict", body.Verdict, "error", err)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, review)
@@ -679,6 +682,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	if s.processDetector != nil {
 		reconcileOpts = append(reconcileOpts, agent.WithProcessDetector(s.processDetector))
 	}
+	reconcileOpts = append(reconcileOpts, agent.WithConflictChecker(&agent.GitConflictChecker{}))
 	if changed := agent.ReconcileSessions(r.Context(), s.store, allSessions, reconcileOpts...); changed > 0 {
 		// Always re-query from DB after reconciliation to get consistent state.
 		// In-memory session objects may have stale statuses if updates were
