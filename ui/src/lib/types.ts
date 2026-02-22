@@ -18,7 +18,7 @@ export interface Project {
   UpdatedAt: string;
 }
 
-export type IssueStatus = "open" | "in_progress" | "done" | "closed";
+export type IssueStatus = "open" | "in_progress" | "done" | "reviewed" | "closed";
 export type IssuePriority = "low" | "medium" | "high";
 export type IssueType = "feature" | "bug" | "chore";
 

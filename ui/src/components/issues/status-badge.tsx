@@ -15,6 +15,10 @@ const statusConfig: Record<IssueStatus, { label: string; className: string }> = 
     label: "Done",
     className: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
   },
+  reviewed: {
+    label: "Reviewed",
+    className: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
+  },
   closed: {
     label: "Closed",
     className: "bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300",

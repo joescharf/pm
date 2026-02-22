@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
-import { Pencil, Trash2, ArrowLeft, Sparkles, Bot } from "lucide-react";
-import { useIssue, useDeleteIssue, useEnrichIssue } from "@/hooks/use-issues";
+import { Pencil, Trash2, ArrowLeft, Sparkles, Bot, CheckCircle2, RotateCcw } from "lucide-react";
+import { useIssue, useDeleteIssue, useEnrichIssue, useUpdateIssue } from "@/hooks/use-issues";
 import { useIssueReviews } from "@/hooks/use-reviews";
 import { useLaunchReviewAgent } from "@/hooks/use-review-agent";
 import { ReviewForm } from "@/components/issues/review-form";
@@ -140,6 +140,7 @@ export function IssueDetail() {
   const deleteIssue = useDeleteIssue();
   const enrichIssue = useEnrichIssue();
   const launchReview = useLaunchReviewAgent();
+  const updateIssue = useUpdateIssue();
   const [editOpen, setEditOpen] = useState(false);
 
   const handleDelete = () => {
@@ -250,6 +251,52 @@ export function IssueDetail() {
           </Button>
         </div>
       </div>
+
+      {/* Reviewed actions */}
+      {issue.Status === "reviewed" && (
+        <Card className="border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
+          <CardContent className="flex items-center justify-between py-4">
+            <p className="text-sm text-muted-foreground">
+              This issue has passed review and is awaiting your approval.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  updateIssue.mutate(
+                    { ...issue, id: issue.ID, Status: "in_progress" as any },
+                    {
+                      onSuccess: () => toast.success("Issue reopened for rework"),
+                      onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+                    }
+                  );
+                }}
+                disabled={updateIssue.isPending}
+              >
+                <RotateCcw className="size-4" />
+                Reopen for Rework
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  updateIssue.mutate(
+                    { ...issue, id: issue.ID, Status: "closed" as any },
+                    {
+                      onSuccess: () => toast.success("Issue closed"),
+                      onError: (err) => toast.error(`Failed: ${(err as Error).message}`),
+                    }
+                  );
+                }}
+                disabled={updateIssue.isPending}
+              >
+                <CheckCircle2 className="size-4" />
+                Close Issue
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Metadata Card */}
       <Card>

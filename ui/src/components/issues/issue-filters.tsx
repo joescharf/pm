@@ -42,6 +42,7 @@ export function IssueFilters({ filters, onChange }: IssueFiltersProps) {
           <SelectItem value="open">Open</SelectItem>
           <SelectItem value="in_progress">In Progress</SelectItem>
           <SelectItem value="done">Done</SelectItem>
+          <SelectItem value="reviewed">Reviewed</SelectItem>
           <SelectItem value="closed">Closed</SelectItem>
         </SelectContent>
       </Select>
