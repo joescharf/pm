@@ -168,7 +168,7 @@ func (s *Server) handleProjectStatus(ctx context.Context, request mcp.CallToolRe
 
 	// Gather issue counts
 	allIssues, _ := s.store.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID})
-	openCount, inProgressCount, doneCount, closedCount := 0, 0, 0, 0
+	openCount, inProgressCount, doneCount, reviewedCount, closedCount := 0, 0, 0, 0, 0
 	for _, issue := range allIssues {
 		switch issue.Status {
 		case models.IssueStatusOpen:
@@ -177,6 +177,8 @@ func (s *Server) handleProjectStatus(ctx context.Context, request mcp.CallToolRe
 			inProgressCount++
 		case models.IssueStatusDone:
 			doneCount++
+		case models.IssueStatusReviewed:
+			reviewedCount++
 		case models.IssueStatusClosed:
 			closedCount++
 		}
@@ -228,6 +230,7 @@ func (s *Server) handleProjectStatus(ctx context.Context, request mcp.CallToolRe
 			"open":        openCount,
 			"in_progress": inProgressCount,
 			"done":        doneCount,
+			"reviewed":    reviewedCount,
 			"closed":      closedCount,
 		},
 		"health": map[string]any{
@@ -250,9 +253,9 @@ func (s *Server) handleProjectStatus(ctx context.Context, request mcp.CallToolRe
 // pm_list_issues
 func (s *Server) listIssuesTool() (mcp.Tool, server.ToolHandlerFunc) {
 	tool := mcp.NewTool("pm_list_issues",
-		mcp.WithDescription("List issues, optionally filtered by project, status, and/or priority. Returns a JSON array of issues. Each issue has: title, description (short summary), body (raw original text with full context — use this for implementation details), ai_prompt (LLM-generated guidance for AI agents), status (open/in_progress/done/closed), priority (low/medium/high), type (feature/bug/chore), and tags."),
+		mcp.WithDescription("List issues, optionally filtered by project, status, and/or priority. Returns a JSON array of issues. Each issue has: title, description (short summary), body (raw original text with full context — use this for implementation details), ai_prompt (LLM-generated guidance for AI agents), status (open/in_progress/done/reviewed/closed), priority (low/medium/high), type (feature/bug/chore), and tags."),
 		mcp.WithString("project", mcp.Description("Project name to filter by")),
-		mcp.WithString("status", mcp.Description("Status filter: open, in_progress, done, closed")),
+		mcp.WithString("status", mcp.Description("Status filter: open, in_progress, done, reviewed, closed")),
 		mcp.WithString("priority", mcp.Description("Priority filter: low, medium, high")),
 	)
 	return tool, s.handleListIssues
@@ -420,7 +423,7 @@ func (s *Server) updateIssueTool() (mcp.Tool, server.ToolHandlerFunc) {
 	tool := mcp.NewTool("pm_update_issue",
 		mcp.WithDescription("Update an existing issue. Provide the issue ID (full or prefix) and at least one field to update. Returns the updated issue as JSON."),
 		mcp.WithString("issue_id", mcp.Required(), mcp.Description("Issue ID (full ULID or unique prefix)")),
-		mcp.WithString("status", mcp.Description("New status: open, in_progress, done, closed")),
+		mcp.WithString("status", mcp.Description("New status: open, in_progress, done, reviewed, closed")),
 		mcp.WithString("title", mcp.Description("New title")),
 		mcp.WithString("description", mcp.Description("New description")),
 		mcp.WithString("body", mcp.Description("New body text")),
@@ -447,10 +450,12 @@ func (s *Server) handleUpdateIssue(ctx context.Context, request mcp.CallToolRequ
 	if status := request.GetString("status", ""); status != "" {
 		issue.Status = models.IssueStatus(status)
 		updated = true
-		// Set ClosedAt when closing
-		if status == string(models.IssueStatusClosed) || status == string(models.IssueStatusDone) {
+		// Set ClosedAt only when closing; clear it when reopening
+		if status == string(models.IssueStatusClosed) {
 			now := time.Now()
 			issue.ClosedAt = &now
+		} else if status == string(models.IssueStatusOpen) || status == string(models.IssueStatusInProgress) {
+			issue.ClosedAt = nil
 		}
 	}
 	if title := request.GetString("title", ""); title != "" {
@@ -1139,9 +1144,7 @@ func (s *Server) handleSaveReview(ctx context.Context, request mcp.CallToolReque
 
 	// Transition issue status
 	if verdict == "pass" {
-		issue.Status = models.IssueStatusClosed
-		now := time.Now().UTC()
-		issue.ClosedAt = &now
+		issue.Status = models.IssueStatusReviewed
 	} else {
 		issue.Status = models.IssueStatusInProgress
 		issue.ClosedAt = nil

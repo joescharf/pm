@@ -194,7 +194,7 @@ func reportWeeklyRun() error {
 		issues, _ := s.ListIssues(ctx, store.IssueListFilter{ProjectID: p.ID})
 		sessions, _ := s.ListAgentSessions(ctx, p.ID, 0)
 
-		open, closed, inProg := 0, 0, 0
+		open, closed, inProg, reviewed := 0, 0, 0, 0
 		for _, i := range issues {
 			switch i.Status {
 			case "open":
@@ -203,6 +203,8 @@ func reportWeeklyRun() error {
 				closed++
 			case "in_progress":
 				inProg++
+			case "reviewed":
+				reviewed++
 			}
 		}
 
@@ -212,7 +214,7 @@ func reportWeeklyRun() error {
 		}
 
 		fmt.Fprintf(ui.Out, "## %s\n", p.Name)
-		fmt.Fprintf(ui.Out, "- Issues: %d open, %d in-progress, %d closed\n", open, inProg, closed)
+		fmt.Fprintf(ui.Out, "- Issues: %d open, %d in-progress, %d reviewed, %d closed\n", open, inProg, reviewed, closed)
 		if len(sessionBranches) > 0 {
 			fmt.Fprintf(ui.Out, "- Agent sessions: %s\n", strings.Join(sessionBranches, ", "))
 		}

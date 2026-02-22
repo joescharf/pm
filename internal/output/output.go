@@ -37,6 +37,7 @@ var (
 	green         = color.New(color.FgHiGreen).SprintFunc()
 	yellow        = color.New(color.FgHiYellow).SprintFunc()
 	red           = color.New(color.FgHiRed).SprintFunc()
+	magenta       = color.New(color.FgMagenta).SprintFunc()
 )
 
 // Cyan returns a cyan-colored string.
@@ -60,6 +61,8 @@ func StatusColor(status string) string {
 		return yellow(status)
 	case "done", "completed":
 		return cyan(status)
+	case "reviewed":
+		return magenta(status)
 	case "closed":
 		return red(status)
 	default:

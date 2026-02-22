@@ -128,7 +128,7 @@ func init() {
 	issueAddCmd.Flags().BoolVar(&issueNoEnrich, "no-enrich", false, "Skip LLM enrichment")
 	_ = issueAddCmd.MarkFlagRequired("title")
 
-	issueListCmd.Flags().StringVar(&issueStatus, "status", "", "Filter by status: open, in_progress, done, closed")
+	issueListCmd.Flags().StringVar(&issueStatus, "status", "", "Filter by status: open, in_progress, done, reviewed, closed")
 	issueListCmd.Flags().StringVar(&issuePriority, "priority", "", "Filter by priority")
 	issueListCmd.Flags().StringVar(&issueTag, "tag", "", "Filter by tag")
 	issueListCmd.Flags().BoolVar(&issueAll, "all", false, "Show all issues across projects")
