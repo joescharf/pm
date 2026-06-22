@@ -10,16 +10,22 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # Build the embedded React UI once and hand it to the Go jobs as an
+  # artifact, so test and lint don't each re-run `bun install` + `bun run
+  # build`. Mirrors the Makefile's ui-build → ui-embed split.
+  ui:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-ui-${{ hashFiles('ui/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-ui-
 
       - name: Install UI dependencies
         run: cd ui && bun install --frozen-lockfile
@@ -27,8 +33,32 @@ jobs:
       - name: Build UI
         run: cd ui && bun run build
 
+      - name: Upload UI dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-dist
+          path: ui/dist
+          retention-days: 1
+          if-no-files-found: error
+
+  test:
+    needs: ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Download UI dist
+        uses: actions/download-artifact@v8
+        with:
+          name: ui-dist
+          path: ui/dist
+
       - name: Embed UI
-        run: rm -rf internal/ui/dist/assets && cp -r ui/dist/* internal/ui/dist/
+        run: mkdir -p internal/ui/dist && rm -rf internal/ui/dist/* && cp -r ui/dist/* internal/ui/dist/
 
       - name: Run tests
         run: go test -v -race -count=1 ./...
@@ -37,26 +67,25 @@ jobs:
         run: go vet ./...
 
   lint:
+    needs: ui
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Install UI dependencies
-        run: cd ui && bun install --frozen-lockfile
-
-      - name: Build UI
-        run: cd ui && bun run build
+      - name: Download UI dist
+        uses: actions/download-artifact@v8
+        with:
+          name: ui-dist
+          path: ui/dist
 
       - name: Embed UI
-        run: rm -rf internal/ui/dist/assets && cp -r ui/dist/* internal/ui/dist/
+        run: mkdir -p internal/ui/dist && rm -rf internal/ui/dist/* && cp -r ui/dist/* internal/ui/dist/
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: "v2.9"
+          version: "v2.9.0"
